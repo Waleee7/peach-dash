@@ -2,13 +2,20 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 /* ---------- world-bend: the road curves down/aside toward the horizon ---------- */
-export const bendU = { uBend: { value: 0.00032 }, uCurve: { value: 0 } }
+/** uFade: scenery between x and y metres dissolves (screen-door) so geometry streamed in past the fog never visibly pops. */
+export const bendU = { uBend: { value: 0.00032 }, uCurve: { value: 0 }, uFade: { value: new THREE.Vector2(338, 394) } }
 const bendChunk = THREE.ShaderChunk.project_vertex.replace(
   'gl_Position',
   'float bz = max(-mvPosition.z - 12.0, 0.0); mvPosition.y -= bz*bz*uBend; mvPosition.x += bz*bz*uCurve;\n gl_Position')
 export function bend<T extends THREE.Material>(m: T): T {
   m.onBeforeCompile = sh => {
-    sh.uniforms.uBend = bendU.uBend; sh.uniforms.uCurve = bendU.uCurve
+    sh.uniforms.uBend = bendU.uBend; sh.uniforms.uCurve = bendU.uCurve; sh.uniforms.uFade = bendU.uFade
+    sh.fragmentShader = sh.fragmentShader.replace('void main() {', `uniform vec2 uFade;
+void main() {
+#ifdef USE_FOG
+  float fk = clamp((vFogDepth - uFade.x) / (uFade.y - uFade.x), 0.0, 1.0);
+  if (fk > 0.0 && fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) < fk) discard;
+#endif`)
     sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', bendChunk)
       .replace('void main() {', 'uniform float uBend; uniform float uCurve;\nvoid main() {')
   }

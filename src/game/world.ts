@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GeoBuilder, bend, bendU, windowTextures, muralTexture, groundTexture, type GroundKind } from './gfx'
 import { mulberry32 } from '../core/rng'
+import { SkylineBackdrop } from './skyline'
 
 export const CHUNK = 40
 export const DISTRICT_CHUNKS = 16
@@ -18,13 +19,13 @@ const FAR = 400
 const CAPX = 1.9
 
 /* ---------------- atmosphere: golden hour -> night -> dawn ---------------- */
-interface Key { t: number; top: string; hor: string; sun: string; sunH: number; hemiS: string; hemiG: string; hemiI: number; dir: string; dirI: number; win: number; stars: number }
+interface Key { t: number; top: string; hor: string; sun: string; sunH: number; hemiS: string; hemiG: string; hemiI: number; dir: string; dirI: number; win: number; stars: number; sk: [number, number, number] }
 const KEYS: Key[] = [
-  { t: 0.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0 },
-  { t: 0.24, top: '#e8708a', hor: '#ff9a5a', sun: '#ffb070', sunH: 0.0, hemiS: '#ffc0a0', hemiG: '#9a6080', hemiI: 0.95, dir: '#ff8a5a', dirI: 1.3, win: 0.45, stars: 0.1 },
-  { t: 0.5, top: '#243a86', hor: '#d0608a', sun: '#000000', sunH: -0.4, hemiS: '#b4bdff', hemiG: '#8a6a98', hemiI: 1.2, dir: '#b4c0ff', dirI: 1.0, win: 1, stars: 1 },
-  { t: 0.78, top: '#34478e', hor: '#f58a7a', sun: '#ffb080', sunH: -0.06, hemiS: '#c8bef0', hemiG: '#a06a78', hemiI: 1.15, dir: '#ffa080', dirI: 1.1, win: 0.6, stars: 0.5 },
-  { t: 1.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0 },
+  { t: 0.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0, sk: [0.75, 0.25, 0] },
+  { t: 0.24, top: '#e8708a', hor: '#ff9a5a', sun: '#ffb070', sunH: 0.0, hemiS: '#ffc0a0', hemiG: '#9a6080', hemiI: 0.95, dir: '#ff8a5a', dirI: 1.3, win: 0.45, stars: 0.1, sk: [0, 1, 0] },
+  { t: 0.5, top: '#243a86', hor: '#d0608a', sun: '#000000', sunH: -0.4, hemiS: '#b4bdff', hemiG: '#8a6a98', hemiI: 1.2, dir: '#b4c0ff', dirI: 1.0, win: 1, stars: 1, sk: [0, 0, 1] },
+  { t: 0.78, top: '#34478e', hor: '#f58a7a', sun: '#ffb080', sunH: -0.06, hemiS: '#c8bef0', hemiG: '#a06a78', hemiI: 1.15, dir: '#ffa080', dirI: 1.1, win: 0.6, stars: 0.5, sk: [0, 0.65, 0.35] },
+  { t: 1.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0, sk: [0.75, 0.25, 0] },
 ]
 const SKY_VS = `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }`
 const SKY_FS = `varying vec3 vDir; uniform vec3 uTop; uniform vec3 uHor; uniform vec3 uSun; uniform float uSunH; uniform float uStars; uniform float uTime;
@@ -42,6 +43,7 @@ void main(){
 export class Atmosphere {
   sky: THREE.Mesh; hemi: THREE.HemisphereLight; dir: THREE.DirectionalLight; ground: THREE.Mesh
   night = 0
+  backdrop: SkylineBackdrop
   private u = { uTop: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uSun: { value: new THREE.Color() }, uSunH: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 } }
   private ca = new THREE.Color(); private cb = new THREE.Color()
   constructor(public scene: THREE.Scene) {
@@ -53,6 +55,7 @@ export class Atmosphere {
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.MeshBasicMaterial({ color: 0x888888, fog: false }))
     this.ground.rotation.x = -Math.PI / 2; this.ground.position.y = -150
     scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR)
+    this.backdrop = new SkylineBackdrop(scene)
     scene.add(this.sky, this.hemi, this.dir, this.dir.target, this.ground)
   }
   private mix(a: string, b: string, f: number, out: THREE.Color) { return out.set(a).lerp(this.cb.set(b), f) }
@@ -69,6 +72,8 @@ export class Atmosphere {
     const fog = this.scene.fog as THREE.Fog; fog.color.copy(this.u.uHor.value)
     ;(this.ground.material as THREE.MeshBasicMaterial).color.copy(fog.color)
     for (const m of winMats) m.emissiveIntensity = this.night * 1.15
+    const sk = a.sk.map((v, n) => v + (b.sk[n] - v) * sf) as [number, number, number]
+    this.backdrop.update(sk, fog.color, camPos, Math.sin(dist / 520) * 0.1, time)
     this.sky.position.copy(camPos); this.ground.position.x = camPos.x; this.ground.position.z = camPos.z
   }
 }
@@ -371,6 +376,7 @@ export class World {
     let ferrisItem: Item | null = null
     const farLim = this.lowQuality ? FOG_FAR - 30 : FAR
     ;(this.scene.fog as THREE.Fog).far = this.lowQuality ? FOG_FAR - 70 : FOG_FAR
+    bendU.uFade.value.set(farLim - 62, farLim - 6)
     for (const c of this.chunks.values()) {
       c.ground.position.z = dist - (c.idx * CHUNK + CHUNK / 2)
       for (const it of c.items) {
