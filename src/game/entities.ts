@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { GeoBuilder, bend, glowTexture, iconTexture } from './gfx'
 import { LANE_W, laneX, type Obstacle, type Sim } from '../core/sim'
 
-const TRUCK_COLORS = [0xff6b5b, 0x2ec4b6, 0xffc83d]
+const TRUCK_COLORS = [0xff7a66, 0x3fe0d0, 0xffd23d]
 function barrierGeo() {
   const b = new GeoBuilder()
   for (const s of [-1, 1]) b.box(0.12, 0.95, 0.5, s * 0.85, 0, 0, 0xfff1d6)
@@ -13,13 +13,13 @@ function barrierGeo() {
 function conesGeo() {
   const b = new GeoBuilder()
   for (const [x, z] of [[-0.55, 0.15], [0.55, 0.1], [0, -0.2]]) {
-    b.box(0.6, 0.05, 0.6, x, 0, z, 0x3a2a4d); b.cyl(0.06, 0.26, 0.72, x, 0.05, z, 0xff7a2f, 8); b.cyl(0.14, 0.18, 0.12, x, 0.3, z, 0xfff1d6, 8)
+    b.box(0.6, 0.05, 0.6, x, 0, z, 0x6a5a80); b.cyl(0.06, 0.26, 0.72, x, 0.05, z, 0xff7a2f, 8); b.cyl(0.14, 0.18, 0.12, x, 0.3, z, 0xfff1d6, 8)
   }
   return b.build()
 }
 function truckGeo(variant: number) {
   const b = new GeoBuilder(), c = TRUCK_COLORS[variant % 3]
-  b.box(2.0, 0.5, 4.9, 0, 0.35, 0, 0x3a2a4d)
+  b.box(2.0, 0.5, 4.9, 0, 0.35, 0, 0x6a5a80)
   b.box(2.0, 2.3, 3.3, 0, 0.9, -0.75, c); b.box(2.0, 1.55, 1.35, 0, 0.9, 1.85, c)
   b.box(1.75, 0.7, 0.05, 0, 1.8, 2.54, 0x9fd8e8); b.box(2.08, 0.22, 0.2, 0, 0.5, 2.5, 0xfff1d6)
   b.ball(0.12, -0.7, 1.0, 2.55, 0xfff0b8, 1, 1, 0.5, 0); b.ball(0.12, 0.7, 1.0, 2.55, 0xfff0b8, 1, 1, 0.5, 0)
@@ -36,22 +36,36 @@ function truckGeo(variant: number) {
 }
 function signGeo(span: number) {
   const b = new GeoBuilder(), W = span * LANE_W - 0.2, px = span * LANE_W / 2 + 0.05
-  b.box(W, 1.85, 0.28, 0, 1.55, 0, 0x2ec4b6); b.box(W + 0.2, 0.12, 0.34, 0, 3.4, 0, 0x3a2a4d)
+  b.box(W, 1.85, 0.28, 0, 1.55, 0, 0x3fe0d0); b.box(W + 0.2, 0.12, 0.34, 0, 3.4, 0, 0x6a5a80)
   b.box(W * 0.92, 0.5, 0.3, 0, 2.55, 0, 0xff8f6b)
-  const n = Math.round(W / 0.5); for (let i = 0; i < n; i++) b.box(W / n, 0.22, 0.32, -W / 2 + (i + 0.5) * W / n, 1.55, 0, i % 2 ? 0xffc83d : 0x3a2a4d)
+  const n = Math.round(W / 0.5); for (let i = 0; i < n; i++) b.box(W / n, 0.22, 0.32, -W / 2 + (i + 0.5) * W / n, 1.55, 0, i % 2 ? 0xffc83d : 0x6a5a80)
   for (let i = 0; i < span * 3; i++) b.box(0.4, 0.26, 0.31, -W / 2 + 0.7 + i * (W - 1.2) / Math.max(1, span * 3 - 1), 2.55, 0, 0xfff1d6)
-  for (const s of [-1, 1]) { b.cyl(0.11, 0.13, 3.4, s * px, 0, 0, 0x3a2a4d, 6); b.ball(0.13, s * px, 3.5, 0, 0xffb347, 1, 1, 1, 0) }
+  for (const s of [-1, 1]) { b.cyl(0.11, 0.13, 3.4, s * px, 0, 0, 0x6a5a80, 6); b.ball(0.13, s * px, 3.5, 0, 0xffb347, 1, 1, 1, 0) }
   return b.build()
 }
 function peachGeo() {
   const b = new GeoBuilder()
-  b.ball(0.32, 0, 0, 0, 0xffa05f, 1, 0.96, 1, 2); b.ball(0.22, 0.12, -0.04, -0.2, 0xff6b6b, 1, 1, 0.5, 1)
-  b.box(0.16, 0.03, 0.08, 0.08, 0.34, 0, 0x4f9f3d, { rz: 0.5 }); b.box(0.03, 0.12, 0.03, 0, 0.31, 0, 0x6b4a3a)
+  b.ball(0.32, 0, 0, 0, 0xffc383, 1, 0.97, 1, 2)                                   // gold body
+  b.ball(0.24, 0.1, 0.02, -0.12, 0xff93a4, 1, 1, 0.7, 1)                           // pink blush
+  b.box(0.035, 0.5, 0.05, 0, -0.26, -0.3, 0xd9546e, { rz: 0.0, rx: 0.12 })        // cleft seam
+  b.box(0.03, 0.1, 0.03, 0, 0.3, 0, 0x6b4a3a)                                      // stem
+  b.box(0.3, 0.035, 0.14, 0.17, 0.4, 0, 0x2fbf4f, { rz: 0.45 })                    // leaf
+  b.box(0.22, 0.035, 0.11, -0.12, 0.38, 0.05, 0x58d36a, { rz: -0.5, ry: 0.6 })     // second leaf
   return b.build()
+}
+function rimMat(m: THREE.MeshLambertMaterial) {
+  const prev = m.onBeforeCompile
+  m.onBeforeCompile = (sh, r) => {
+    prev.call(m, sh, r)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>',
+      'float rim = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.2);\n gl_FragColor.rgb += vec3(1.0, 0.86, 0.62) * rim * 0.5;\n #include <dithering_fragment>')
+  }
+  m.customProgramCacheKey = () => 'rim'
+  return m
 }
 function padGeo() {
   const b = new GeoBuilder()
-  b.box(2.0, 0.05, 3.6, 0, 0, 0, 0x3a2a4d)
+  b.box(2.0, 0.05, 3.6, 0, 0, 0, 0x6a5a80)
   for (let i = 0; i < 3; i++) { for (const s of [-1, 1]) b.box(1.2, 0.07, 0.28, s * 0.46, 0.0, -1.1 + i * 1.05 + 0.0, 0xffd04a, { ry: -s * 0.75 }) }
   return b.build()
 }
@@ -67,8 +81,8 @@ export class Entities {
   shadow: THREE.Mesh
   private d = new THREE.Object3D()
   constructor(public scene: THREE.Scene) {
-    this.propMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true }))
-    const pm = bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x6a2a10 }))
+    this.propMat = rimMat(bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x4a3038 })))
+    const pm = bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xa04a3a }))
     this.peaches = new THREE.InstancedMesh(peachGeo(), pm, 220); this.peaches.frustumCulled = false; this.peaches.count = 0; scene.add(this.peaches)
     const padMat = bend(new THREE.MeshBasicMaterial({ vertexColors: true }))
     const pg = padGeo()

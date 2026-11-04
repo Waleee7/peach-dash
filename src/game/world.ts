@@ -18,8 +18,8 @@ interface Key { t: number; top: string; hor: string; sun: string; sunH: number; 
 const KEYS: Key[] = [
   { t: 0.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0 },
   { t: 0.24, top: '#e8708a', hor: '#ff9a5a', sun: '#ffb070', sunH: 0.0, hemiS: '#ffc0a0', hemiG: '#9a6080', hemiI: 0.95, dir: '#ff8a5a', dirI: 1.3, win: 0.45, stars: 0.1 },
-  { t: 0.5, top: '#243a86', hor: '#d0608a', sun: '#000000', sunH: -0.4, hemiS: '#9aa6f0', hemiG: '#6a4a78', hemiI: 0.95, dir: '#9fb0ff', dirI: 0.7, win: 1, stars: 1 },
-  { t: 0.78, top: '#34478e', hor: '#f58a7a', sun: '#ffb080', sunH: -0.06, hemiS: '#b8aee0', hemiG: '#8a5a68', hemiI: 0.95, dir: '#ffa080', dirI: 0.9, win: 0.6, stars: 0.5 },
+  { t: 0.5, top: '#243a86', hor: '#d0608a', sun: '#000000', sunH: -0.4, hemiS: '#b4bdff', hemiG: '#8a6a98', hemiI: 1.2, dir: '#b4c0ff', dirI: 1.0, win: 1, stars: 1 },
+  { t: 0.78, top: '#34478e', hor: '#f58a7a', sun: '#ffb080', sunH: -0.06, hemiS: '#c8bef0', hemiG: '#a06a78', hemiI: 1.15, dir: '#ffa080', dirI: 1.1, win: 0.6, stars: 0.5 },
   { t: 1.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0 },
 ]
 const SKY_VS = `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }`

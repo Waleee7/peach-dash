@@ -32,6 +32,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#ffc98b;color:var(--cr
 .ribbon{display:inline-block;background:var(--ink);color:var(--gold);font:700 13px var(--mono);letter-spacing:.22em;padding:7px 14px;transform:rotate(-2deg);box-shadow:4px 4px 0 var(--peach)}
 
 /* title */
+#title::before{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(43,26,51,.55),rgba(43,26,51,.22) 42%,transparent 68%)}
+@media (max-aspect-ratio:1/1){#title::before{background:linear-gradient(180deg,rgba(43,26,51,.5),transparent 45%)}}
+#title>*{position:relative}
 #title .logo{position:absolute;left:calc(var(--sal) + 20px);top:calc(var(--sat) + 74px);max-width:none}
 #title h1{margin:14px 0 6px;font:400 clamp(70px,13vw,150px)/.84 var(--display);transform:rotate(-4deg);transform-origin:left bottom}
 #title h1>span{display:block;white-space:nowrap}
@@ -103,10 +106,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#ffc98b;color:var(--cr
 .callout small{display:block;font:700 16px var(--mono);letter-spacing:.2em;color:var(--gold);-webkit-text-stroke:0;text-shadow:0 2px 0 var(--ink);margin-top:6px}
 .callout.go{animation:callout .95s var(--spring) both}
 @keyframes callout{0%{opacity:0;transform:translateX(-50%) scale(.3) rotate(-8deg)}18%{opacity:1;transform:translateX(-50%) scale(1.18) rotate(2deg)}30%{transform:translateX(-50%) scale(1)}78%{opacity:1}100%{opacity:0;transform:translateX(-50%) translateY(-30px) scale(.95)}}
-.district{position:absolute;left:0;top:44%;background:var(--ink);color:var(--cream);padding:10px 26px 10px calc(var(--sal) + 18px);transform:translateX(-160%) skewX(-8deg);border-right:8px solid var(--coral);box-shadow:6px 6px 0 var(--gold)}
-.district small{display:block;font:700 10px var(--mono);letter-spacing:.3em;color:var(--gold)}.district b{font:400 clamp(24px,6vw,36px) var(--display)}.district em{display:block;font:500 11px var(--mono);font-style:normal;color:var(--peach)}
+.district{position:absolute;right:0;top:calc(var(--sat) + 72px);background:var(--ink);color:var(--cream);padding:5px calc(var(--sar) + 14px) 5px 18px;transform:translateX(160%) skewX(-8deg);border-left:6px solid var(--coral);box-shadow:-3px 3px 0 var(--gold);text-align:right;max-width:70vw}
+.district small{display:none}.district b{font:400 clamp(15px,4vw,22px) var(--display)}.district em{display:block;font:500 10px var(--mono);font-style:normal;color:var(--peach)}
 .district.go{animation:banner 3s cubic-bezier(.2,1,.3,1) both}
-@keyframes banner{0%{transform:translateX(-160%) skewX(-8deg)}12%{transform:translateX(0) skewX(-8deg)}80%{transform:translateX(0) skewX(-8deg)}100%{transform:translateX(-160%) skewX(-8deg)}}
+@keyframes banner{0%{transform:translateX(160%) skewX(-8deg)}12%{transform:translateX(0) skewX(-8deg)}80%{transform:translateX(0) skewX(-8deg)}100%{transform:translateX(160%) skewX(-8deg)}}
 .hint{position:absolute;left:0;right:0;bottom:calc(var(--sab) + 28px);display:flex;justify-content:center;gap:10px;flex-wrap:wrap;transition:opacity .6s}
 .hint span{background:var(--cream);color:var(--ink);border:3px solid var(--ink);padding:6px 10px;font:700 12px var(--mono);letter-spacing:.1em;box-shadow:3px 3px 0 var(--ink);animation:slide .4s var(--spring) both}
 .hint.off{opacity:0}
@@ -115,7 +118,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#ffc98b;color:var(--cr
 .panel.wide{width:min(480px,calc(100vw - 28px));gap:12px}
 .o-score{text-align:center;position:relative}.o-score small{display:block;color:var(--coral);font-size:12px}
 .o-score b{font:400 clamp(54px,14vw,84px)/1 var(--display);color:var(--ink);text-shadow:3px 3px 0 var(--gold)}
-.o-score em{position:absolute;right:0;top:4px;font:400 15px var(--display);font-style:normal;background:var(--coral);color:var(--cream);padding:3px 9px;transform:rotate(6deg);border:2.5px solid var(--ink);display:none}
+.o-score em.x{position:absolute;right:0;top:4px;font:400 15px var(--display);font-style:normal;background:var(--coral);color:var(--cream);padding:3px 9px;transform:rotate(6deg);border:2.5px solid var(--ink);display:none}
 .o-score em.on{display:block;animation:pulse .5s var(--spring)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cell{background:#fff8e8;border:2.5px solid var(--ink);padding:6px 10px;font:700 11px var(--mono);letter-spacing:.08em}.cell b{display:block;font:400 22px var(--display);letter-spacing:0}
 .o-daily{font:700 12px var(--mono)}

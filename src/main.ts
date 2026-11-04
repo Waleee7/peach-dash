@@ -193,7 +193,6 @@ class Game {
     const r = this.commit(), s = this.sim, m = dailyMission(this.today)
     this.mode = 'over'; this.show('over')
     $('o-score').textContent = Math.floor(s.score).toLocaleString()
-    $('o-new').classList.toggle('on', r.isBest && s.score > 0)
     $('o-grid').innerHTML = [['DISTANCE', `${Math.floor(s.dist)} m`], ['PEACHES', `+${Math.floor(s.peaches)}`], ['NEAR MISSES', s.stats.near], ['BEST COMBO', s.stats.maxCombo]].map(([a, b]) => `<div class="cell">${a}<b>${b}</b></div>`).join('')
     const dp = this.save.daily
     $('o-daily').innerHTML = r.reward ? `DAILY COMPLETE: ${m.text} <b>+${r.reward}</b> peaches` : dp.claimed ? 'DAILY MISSION DONE. COME BACK TOMORROW.' : `DAILY: ${m.text} (${Math.min(dp.progress, m.target)}/${m.target})`

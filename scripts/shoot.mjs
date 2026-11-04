@@ -6,6 +6,8 @@ mkdirSync('shots', { recursive: true })
 const browser = await chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] })
 const sizes = { desktop: { width: 1440, height: 900 }, mobile: { width: 390, height: 844 } }
 const jobs = [
+  ['dusk', '?screen=play&bot=1&at=330', 3500],
+  ['night-park', '?screen=play&bot=1&at=1750', 4000],
   ['title', '?fresh=1&screen=title&at=0', 2500],
   ['play-downtown', '?fresh=1&screen=play&bot=1&at=60', 5500],
   ['play-beltline', '?fresh=1&screen=play&bot=1&at=830', 5000],
