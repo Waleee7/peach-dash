@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 /* ---------- world-bend: the road curves down/aside toward the horizon ---------- */
-export const bendU = { uBend: { value: 0.0011 }, uCurve: { value: 0 } }
+export const bendU = { uBend: { value: 0.00032 }, uCurve: { value: 0 } }
 const bendChunk = THREE.ShaderChunk.project_vertex.replace(
   'gl_Position',
   'float bz = max(-mvPosition.z - 12.0, 0.0); mvPosition.y -= bz*bz*uBend; mvPosition.x += bz*bz*uCurve;\n gl_Position')
@@ -155,6 +155,7 @@ export function groundTexture(kind: GroundKind) {
     x.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.08)'
     const px = rnd() * W; x.fillRect(px, rnd() * H, 2 + rnd() * 3, 2 + rnd() * 3)
   }
+  x.fillStyle = pal.lot; x.fillRect(0, 0, 10, H); x.fillRect(W - 10, 0, 10, H)   // flat edge columns: texture clamps outward, no streaks
   if (kind === 'clay') for (const tx of [-1.5, 1.5]) { x.fillStyle = 'rgba(90,30,10,.18)'; x.fillRect(X(tx) - 7, 0, 14, H) }
   if (kind === 'concrete') { x.fillStyle = 'rgba(80,60,40,.25)'; for (let j = 0; j < 8; j++) x.fillRect(X(-4.2), (j / 8) * H, X(4.2) - X(-4.2), 2) }
   if (kind !== 'clay') for (let j = 0; j < 4; j++) { x.fillStyle = 'rgba(80,60,50,.22)'; x.fillRect(X(-9), (j / 4) * H, X(-4.6) - X(-9), 2); x.fillRect(X(4.6), (j / 4) * H, X(9) - X(4.6), 2) }

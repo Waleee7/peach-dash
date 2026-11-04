@@ -11,7 +11,11 @@ export const DISTRICTS = [
   { id: 'park', name: 'PEACH PARK', sub: 'Ferris wheel. Orchard. Red clay.', ground: 'clay' as GroundKind },
 ]
 export const districtAt = (dist: number) => Math.floor(dist / DISTRICT_LEN) % 3
-const FAR = 270
+/** Streaming + draw distance. Everything is built past FOG_FAR so it only ever fades IN from fog, never pops. */
+export const FOG_NEAR = 70
+export const FOG_FAR = 330
+const FAR = 400
+const CAPX = 1.9
 
 /* ---------------- atmosphere: golden hour -> night -> dawn ---------------- */
 interface Key { t: number; top: string; hor: string; sun: string; sunH: number; hemiS: string; hemiG: string; hemiI: number; dir: string; dirI: number; win: number; stars: number }
@@ -45,9 +49,10 @@ export class Atmosphere {
     this.sky.renderOrder = -10; this.sky.frustumCulled = false
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1)
     this.dir = new THREE.DirectionalLight(0xffffff, 1); this.dir.position.set(-0.5, 0.7, -0.6)
-    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: 0x888888, fog: false }))
-    this.ground.rotation.x = -Math.PI / 2; this.ground.position.y = -0.7
-    scene.fog = new THREE.Fog(0xffffff, 50, 245)
+    // infinite-looking floor: huge, far BELOW the bent road (so the road can never sink under it) and exactly the fog colour
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.MeshBasicMaterial({ color: 0x888888, fog: false }))
+    this.ground.rotation.x = -Math.PI / 2; this.ground.position.y = -150
+    scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR)
     scene.add(this.sky, this.hemi, this.dir, this.dir.target, this.ground)
   }
   private mix(a: string, b: string, f: number, out: THREE.Color) { return out.set(a).lerp(this.cb.set(b), f) }
@@ -62,7 +67,7 @@ export class Atmosphere {
     this.mix(a.dir, b.dir, sf, this.dir.color); this.dir.intensity = L(a.dirI, b.dirI)
     this.night = L(a.win, b.win)
     const fog = this.scene.fog as THREE.Fog; fog.color.copy(this.u.uHor.value)
-    ;(this.ground.material as THREE.MeshBasicMaterial).color.copy(fog.color).multiplyScalar(0.92)
+    ;(this.ground.material as THREE.MeshBasicMaterial).color.copy(fog.color)
     for (const m of winMats) m.emissiveIntensity = this.night * 1.15
     this.sky.position.copy(camPos); this.ground.position.x = camPos.x; this.ground.position.z = camPos.z
   }
@@ -233,13 +238,20 @@ function buildFerris(mats: { prop: THREE.Material; glow: THREE.Material }): Ferr
   return { group, wheel, cabins }
 }
 
+/** 700 m wide so the lot colour runs out past the fog on both sides; UVs keep the road texture on the central 110 m. */
+function wideGround() {
+  const g = new THREE.PlaneGeometry(700, CHUNK, 1, 1), uv = g.attributes.uv as THREE.BufferAttribute, pos = g.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < uv.count; i++) uv.setX(i, (pos.getX(i) + 55) / 110)
+  return g
+}
+
 export class World {
   scene: THREE.Scene
   variants = new Map<string, { def: VariantDef; mesh: THREE.InstancedMesh; n: number }>()
   chunks = new Map<number, Chunk>()
   winMats: THREE.MeshLambertMaterial[] = []
   groundMats: Record<GroundKind, THREE.MeshLambertMaterial>
-  groundGeo = new THREE.PlaneGeometry(110, CHUNK, 1, 8)
+  groundGeo = wideGround()
   ferris: FerrisRig
   ferrisActive = false
   private m4 = new THREE.Matrix4(); private col = new THREE.Color()
@@ -259,6 +271,7 @@ export class World {
       clay: bend(new THREE.MeshLambertMaterial({ map: groundTexture('clay') })),
     }
     const add = (k: string, geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, ext = 14, also?: string) => {
+      cap = Math.ceil(cap * CAPX)
       const def: VariantDef = { geo, mat, cap, ext, also }
       const mesh = new THREE.InstancedMesh(geo, mat, cap)
       mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3)
@@ -287,6 +300,11 @@ export class World {
   }
 
   reset() { for (const c of this.chunks.values()) c.ground.parent?.remove(c.ground); this.chunks.clear() }
+  /** Build every chunk out to the far limit before the first frame so nothing streams in on screen. */
+  warm(dist: number, time: number) {
+    const first = Math.max(0, Math.floor((dist - 50) / CHUNK)), last = Math.floor((dist + FAR + 30) / CHUNK)
+    for (let i = first; i <= last; i++) if (!this.chunks.has(i)) this.chunks.set(i, this.gen(i, time))
+  }
 
   private gen(idx: number, time: number): Chunk {
     const district = Math.floor(idx / DISTRICT_CHUNKS) % 3, k = idx % DISTRICT_CHUNKS, z0 = idx * CHUNK
@@ -348,10 +366,11 @@ export class World {
     const first = Math.max(0, Math.floor((dist - 50) / CHUNK)), last = Math.floor((dist + FAR + 30) / CHUNK)
     for (const [i, c] of this.chunks) if (i < first) { this.scene.remove(c.ground); this.chunks.delete(i) }
     let made = 0
-    for (let i = first; i <= last; i++) if (!this.chunks.has(i) && (made++ < 3 || i < first + 2)) this.chunks.set(i, this.gen(i, time))
+    for (let i = first; i <= last; i++) if (!this.chunks.has(i) && (made++ < 5 || i < first + 3)) this.chunks.set(i, this.gen(i, time))
     for (const v of this.variants.values()) v.n = 0
     let ferrisItem: Item | null = null
-    const farLim = this.lowQuality ? 190 : FAR
+    const farLim = this.lowQuality ? FOG_FAR - 30 : FAR
+    ;(this.scene.fog as THREE.Fog).far = this.lowQuality ? FOG_FAR - 70 : FOG_FAR
     for (const c of this.chunks.values()) {
       c.ground.position.z = dist - (c.idx * CHUNK + CHUNK / 2)
       for (const it of c.items) {

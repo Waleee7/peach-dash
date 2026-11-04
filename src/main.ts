@@ -82,13 +82,13 @@ class Game {
     this.sim = new Sim(rseed(), charById(this.save.selected).perk)
     this.sim.invincible = true; if (at) this.sim.teleport(at); this.attract = true
     this.sim.onEvent = e => this.onEvent(e)
-    this.world.reset(); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
+    this.world.reset(); this.world.warm(this.sim.dist, this.clock); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
   }
   startRun(at = 0) {
     const ch = charById(this.save.selected)
     this.sim = new Sim(rseed(), ch.perk); if (at) this.sim.teleport(at); this.attract = false
     this.sim.onEvent = e => this.onEvent(e)
-    this.world.reset(); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
+    this.world.reset(); this.world.warm(this.sim.dist, this.clock); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
     this.committed = { peaches: 0, near: 0, dist: 0, jumps: 0 }
     this.showRunner(ch.id); this.dying = 0; this.hitStop = 0; this.shake = 0
     this.mode = 'play'; this.show('hud'); this.sound.unlock(); this.sound.startMusic()

@@ -11,6 +11,8 @@ export const SLIDE_H = 0.7
 export const HALF_W = 0.32
 export const START_SPEED = 17
 export const MAX_SPEED = 36
+/** How far past the player the course is generated (must exceed the fog distance so nothing pops in). */
+export const SPAWN_AHEAD = 420
 export const speedAt = (d: number) => MAX_SPEED - (MAX_SPEED - START_SPEED) * Math.exp(-d / 3200)
 export const multiplier = (combo: number) => 1 + Math.min(4, Math.floor(combo / 10))
 
@@ -127,11 +129,11 @@ export class Sim {
     this.spawner = new Spawner(seed)
     this.tea = perk.startTea
     this.speed = START_SPEED
-    this.spawner.fill(this.track, 260)
+    this.spawner.fill(this.track, SPAWN_AHEAD)
   }
   /** Debug/screenshot helper: jump to a distance with a clear runway. */
   teleport(d: number) {
-    this.dist = d; this.track = { obstacles: [], pickups: [] }; this.spawner.cursor = d + 110; this.spawner.fill(this.track, d + 260)
+    this.dist = d; this.track = { obstacles: [], pickups: [] }; this.spawner.cursor = d + 110; this.spawner.fill(this.track, d + SPAWN_AHEAD)
   }
   get mult() { return multiplier(this.combo) }
   get height() { return this.p.slide > 0 ? SLIDE_H : PLAYER_H }
@@ -172,7 +174,7 @@ export class Sim {
     this.speed += (target - this.speed) * (1 - Math.exp(-h * 4))
     this.dist += this.speed * h
     this.score += this.speed * h * 0.5 * this.mult
-    this.spawner.fill(tr, this.dist + 260)
+    this.spawner.fill(tr, this.dist + SPAWN_AHEAD)
     // player
     p.x += (laneX(p.lane) - p.x) * (1 - Math.exp(-h * this.perk.laneRate))
     if (p.slide > 0) p.slide -= h

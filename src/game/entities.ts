@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GeoBuilder, bend, glowTexture, iconTexture } from './gfx'
-import { LANE_W, laneX, type Obstacle, type Sim } from '../core/sim'
+import { LANE_W, SPAWN_AHEAD, laneX, type Obstacle, type Sim } from '../core/sim'
 
 const TRUCK_COLORS = [0xff7a66, 0x3fe0d0, 0xffd23d]
 function barrierGeo() {
@@ -83,7 +83,7 @@ export class Entities {
   constructor(public scene: THREE.Scene) {
     this.propMat = rimMat(bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x4a3038 })))
     const pm = bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xa04a3a }))
-    this.peaches = new THREE.InstancedMesh(peachGeo(), pm, 220); this.peaches.frustumCulled = false; this.peaches.count = 0; scene.add(this.peaches)
+    this.peaches = new THREE.InstancedMesh(peachGeo(), pm, 640); this.peaches.frustumCulled = false; this.peaches.count = 0; scene.add(this.peaches)
     const padMat = bend(new THREE.MeshBasicMaterial({ vertexColors: true }))
     const pg = padGeo()
     for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(pg, padMat); m.visible = false; scene.add(m); this.pads.push(m) }
@@ -112,7 +112,7 @@ export class Entities {
     const P = sim.dist, seen = new Set<number>()
     for (const o of sim.track.obstacles) {
       const rel = P - o.d
-      if (rel < -270 || rel - o.len > 14) continue
+      if (rel < -SPAWN_AHEAD || rel - o.len > 14) continue
       seen.add(o.id)
       let l = this.live.get(o.id); if (!l) { l = this.acquire(o); this.live.set(o.id, l) }
       const cx = laneX(o.lane) + (o.span - 1) * LANE_W / 2
@@ -126,11 +126,11 @@ export class Entities {
     for (const k of sim.track.pickups) {
       if (k.taken) continue
       const rel = P - k.d
-      if (rel < -250 || rel > 12) continue
+      if (rel < -SPAWN_AHEAD || rel > 12) continue
       let x = laneX(k.lane), y = k.y, z = rel
       if (k.kind === 'peach') {
         if (k.pull > 0) { const t = Math.min(1, k.pull), e = t * t; x += (sim.p.x - x) * e; y += (sim.p.y + 1 - y) * e; z *= 1 - e }
-        if (n >= 220) continue
+        if (n >= 640) continue
         this.d.position.set(x, y + Math.sin(time * 3 + k.d) * 0.06, z); this.d.rotation.set(0, time * 3 + k.d, 0); this.d.scale.setScalar(1.75 * (k.pull > 0 ? 1 - 0.4 * k.pull : 1)); this.d.updateMatrix()
         this.peaches.setMatrixAt(n++, this.d.matrix)
       } else if (k.kind === 'pad') {
