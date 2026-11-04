@@ -136,7 +136,7 @@ export class Entities {
       } else if (k.kind === 'pad') {
         const m = this.pads[padN++]; if (!m) continue
         m.visible = true; m.position.set(x, 0.03, z); m.scale.y = 1 + Math.sin(time * 10) * 0.3
-      } else {
+      } else if (k.kind === 'tea' || k.kind === 'board') {
         const sp = this.sprites[k.kind][cnt[k.kind]++]; if (!sp) continue
         sp.visible = true; sp.position.set(x, 1.35 + Math.sin(time * 3) * 0.2, z); sp.scale.setScalar(1.9 + Math.sin(time * 6) * 0.12)
       }
