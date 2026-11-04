@@ -39,7 +39,7 @@ class Game {
     this.atm = new Atmosphere(this.scene)
     const fresh = !localStorage.getItem('peachdash.v1')
     this.save = loadSave(localStorage)
-    if (qs.get('fresh') === '1') this.save = defaultSave()
+    if (import.meta.env.DEV && qs.get('fresh') === '1') this.save = defaultSave()
     if (fresh && matchMedia('(prefers-reduced-motion: reduce)').matches) this.save.settings.reduced = true
   }
   async init() {
