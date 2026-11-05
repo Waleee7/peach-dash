@@ -1,6 +1,8 @@
 import * as THREE from 'three'
-import { GeoBuilder, bend, glowTexture, iconTexture } from './gfx'
-import { LANE_W, SPAWN_AHEAD, laneX, type Obstacle, type Sim } from '../core/sim'
+import { GeoBuilder, bend, glowTexture, haloTexture } from './gfx'
+import { LANE_W, LETTERS, SPAWN_AHEAD, laneX, type Obstacle, type Sim } from '../core/sim'
+import { POWERS, type PowerKind } from '../core/powers'
+import { pickupGeo, PICKUP_SCALE, scooterGeo, barricadeGeo, lowSignGeo, carGeo, trainGeo, rampGeo } from './models'
 
 const TRUCK_COLORS = [0xff7a66, 0x3fe0d0, 0xffd23d]
 function barrierGeo() {
@@ -75,29 +77,34 @@ export class Entities {
   private live = new Map<number, { mesh: THREE.Mesh; key: string }>()
   private geos = new Map<string, THREE.BufferGeometry>()
   private propMat: THREE.MeshLambertMaterial
+  private pickMat: THREE.MeshLambertMaterial
   peaches: THREE.InstancedMesh
   private pads: THREE.Mesh[] = []
-  private sprites: Record<string, THREE.Sprite[]> = { tea: [], board: [] }
+  private picks = new Map<string, { meshes: THREE.Mesh[]; used: number }>()
+  private halos: THREE.Sprite[] = []
   shadow: THREE.Mesh
   private d = new THREE.Object3D()
   constructor(public scene: THREE.Scene) {
     this.propMat = rimMat(bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x4a3038 })))
+    this.pickMat = rimMat(bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x8a6040 })))
     const pm = bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xa04a3a }))
     this.peaches = new THREE.InstancedMesh(peachGeo(), pm, 640); this.peaches.frustumCulled = false; this.peaches.count = 0; scene.add(this.peaches)
     const padMat = bend(new THREE.MeshBasicMaterial({ vertexColors: true }))
     const pg = padGeo()
     for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(pg, padMat); m.visible = false; scene.add(m); this.pads.push(m) }
-    for (const k of ['tea', 'board'] as const) for (let i = 0; i < 3; i++) {
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture(k), fog: false, depthWrite: false })); s.scale.setScalar(1.9); s.visible = false; s.renderOrder = 4
-      scene.add(s); this.sprites[k].push(s)
-    }
+    for (let i = 0; i < 8; i++) { const h = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); h.visible = false; h.renderOrder = 4; scene.add(h); this.halos.push(h) }
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, fog: false }))
     this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = 0.04; this.shadow.renderOrder = 1; scene.add(this.shadow)
   }
   private geo(o: Obstacle) {
-    const key = o.kind === 'truck' ? 'truck' + (o.variant % 3) : o.kind === 'sign' ? 'sign' + o.span : o.kind
+    const key = o.kind === 'truck' || o.kind === 'car' ? o.kind + (o.variant % 3) : o.kind === 'sign' || o.kind === 'lowsign' || o.kind === 'barricade' ? o.kind + o.span : o.kind === 'train' ? 'train' + Math.round(o.len / 14.8) : o.kind
     let g = this.geos.get(key)
-    if (!g) { g = o.kind === 'barrier' ? barrierGeo() : o.kind === 'cones' ? conesGeo() : o.kind === 'truck' ? truckGeo(o.variant) : signGeo(o.span); this.geos.set(key, g) }
+    if (!g) {
+      g = o.kind === 'barrier' ? barrierGeo() : o.kind === 'cones' ? conesGeo() : o.kind === 'truck' ? truckGeo(o.variant) : o.kind === 'sign' ? signGeo(o.span)
+        : o.kind === 'scooter' ? scooterGeo() : o.kind === 'barricade' ? barricadeGeo(o.span) : o.kind === 'lowsign' ? lowSignGeo(o.span)
+        : o.kind === 'car' ? carGeo(o.variant) : o.kind === 'train' ? trainGeo(Math.round(o.len / 14.8)) : rampGeo()
+      this.geos.set(key, g)
+    }
     return { key, g }
   }
   private acquire(o: Obstacle) {
@@ -112,21 +119,24 @@ export class Entities {
     const P = sim.dist, seen = new Set<number>()
     for (const o of sim.track.obstacles) {
       const rel = P - o.d
-      if (rel < -SPAWN_AHEAD || rel - o.len > 14) continue
+      if (o.smashed || rel < -SPAWN_AHEAD - o.len || rel - o.len > 14) continue
       seen.add(o.id)
       let l = this.live.get(o.id); if (!l) { l = this.acquire(o); this.live.set(o.id, l) }
       const cx = laneX(o.lane) + (o.span - 1) * LANE_W / 2
       l.mesh.position.set(cx, 0, rel - o.len / 2)
+      l.mesh.rotation.y = o.kind === 'car' && (o.vel ?? 0) > 0 ? Math.PI : 0
     }
     for (const [id, l] of this.live) if (!seen.has(id)) { this.scene.remove(l.mesh); this.pools.get(l.key)!.push(l.mesh); this.live.delete(id) }
     // pickups
-    let n = 0, padN = 0; const cnt = { tea: 0, board: 0 }
+    let n = 0, padN = 0, haloN = 0
     for (const s of this.pads) s.visible = false
-    for (const s of [...this.sprites.tea, ...this.sprites.board]) s.visible = false
+    for (const h of this.halos) h.visible = false
+    for (const v of this.picks.values()) { v.used = 0; for (const m of v.meshes) m.visible = false }
+    const ch = LETTERS[Math.min(sim.letterIdx, LETTERS.length - 1)]
     for (const k of sim.track.pickups) {
       if (k.taken) continue
       const rel = P - k.d
-      if (rel < -SPAWN_AHEAD || rel > 12) continue
+      if (rel < -SPAWN_AHEAD || rel > 4) continue
       let x = laneX(k.lane), y = k.y, z = rel
       if (k.kind === 'peach') {
         if (k.pull > 0) { const t = Math.min(1, k.pull), e = t * t; x += (sim.p.x - x) * e; y += (sim.p.y + 1 - y) * e; z *= 1 - e }
@@ -136,9 +146,17 @@ export class Entities {
       } else if (k.kind === 'pad') {
         const m = this.pads[padN++]; if (!m) continue
         m.visible = true; m.position.set(x, 0.03, z); m.scale.y = 1 + Math.sin(time * 10) * 0.3
-      } else if (k.kind === 'tea' || k.kind === 'board') {
-        const sp = this.sprites[k.kind][cnt[k.kind]++]; if (!sp) continue
-        sp.visible = true; sp.position.set(x, 1.35 + Math.sin(time * 3) * 0.2, z); sp.scale.setScalar(1.9 + Math.sin(time * 6) * 0.12)
+      } else {
+        const key = k.kind === 'letter' ? 'letter' + ch : k.kind
+        let pool = this.picks.get(key); if (!pool) { pool = { meshes: [], used: 0 }; this.picks.set(key, pool) }
+        let m = pool.meshes[pool.used]
+        if (!m) { m = new THREE.Mesh(pickupGeo(k.kind as PowerKind | 'crate' | 'letter', ch), this.pickMat); m.frustumCulled = false; this.scene.add(m); pool.meshes.push(m) }
+        pool.used++; m.visible = true
+        const sc = PICKUP_SCALE[k.kind] * (1 + Math.sin(time * 5 + k.d) * 0.05)
+        m.position.set(x, y + Math.sin(time * 3 + k.d) * 0.18, z); m.scale.setScalar(sc)
+        m.rotation.set(k.kind === 'crate' ? Math.sin(time * 2) * 0.12 : 0, time * 2.2 + k.d, k.kind === 'wing' ? 0.5 : 0)
+        const hl = this.halos[haloN++]
+        if (hl) { hl.visible = true; hl.position.set(x, y, z); hl.scale.setScalar(2.8 + Math.sin(time * 4 + k.d) * 0.3); (hl.material as THREE.SpriteMaterial).color.setHex(k.kind === 'crate' ? 0xffd166 : k.kind === 'letter' ? 0xffe066 : POWERS[k.kind as PowerKind].hex); (hl.material as THREE.SpriteMaterial).opacity = 0.55 }
       }
     }
     this.peaches.count = n; this.peaches.instanceMatrix.needsUpdate = true

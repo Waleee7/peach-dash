@@ -4,6 +4,8 @@ import * as THREE from 'three'
 const PATTERNS: Record<string, number | number[]> = {
   peach: 7, combo: [10, 24, 10, 24, 26], jump: 16, slide: 12, lane: 5, land: [20], near: [10, 28, 24],
   tea: [14, 30, 14, 30, 34], board: [14, 30, 14, 30, 34], pad: [30, 20, 44], crash: [110, 40, 70, 40, 240],
+  wing: [14, 20, 14, 20, 14, 20, 40, 30, 70], cobbler: [24, 30, 12, 30, 40], kicks: [10, 16, 30, 24, 50], glide: [60, 40, 20, 20, 20, 20, 20],
+  crate: [18, 24, 18, 24, 18, 60], letter: [12, 20, 24], atlanta: [30, 30, 30, 30, 30, 30, 120], stumble: [60, 30, 36, 24, 80], smash: [40, 14, 40], honk: [18, 40, 18], end: [8, 24, 8], level: [20, 30, 20, 30, 20, 30, 90],
   shield: [50, 30, 50], ui: 6, buy: [12, 30, 22], revive: [20, 40, 20, 40, 60], go: [30, 40, 30, 40, 90],
 }
 export const Haptics = {
@@ -59,6 +61,18 @@ export class Sound {
       case 'lane': this.tone(520, 0.05, 'triangle', 0.14, 380); break
       case 'land': this.tone(130, 0.12, 'sine', 0.35, 55); this.noise(0.08, 0.2, 900, 200); break
       case 'near': this.noise(0.28, 0.6, 600, 5000, 'bandpass'); this.tone(900, 0.18, 'sawtooth', 0.09, 2000, 0.02); break
+      case 'wing': this.tone(180, 0.5, 'sawtooth', 0.16, 1500); this.noise(0.5, 0.35, 600, 6000, 'bandpass'); [880, 1100, 1320].forEach((f, i) => this.tone(f, 0.1, 'square', 0.1, undefined, 0.3 + i * 0.05)); break
+      case 'cobbler': [392, 494, 587, 784].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.2, undefined, i * 0.07)); this.tone(1568, 0.5, 'sine', 0.1, undefined, 0.3); break
+      case 'kicks': this.tone(120, 0.12, 'square', 0.18, 90); this.tone(300, 0.3, 'triangle', 0.16, 1200, 0.1); this.tone(1200, 0.08, 'square', 0.08, undefined, 0.38); break
+      case 'glide': this.noise(0.7, 0.35, 300, 3500, 'bandpass'); [523, 784, 1047, 1568].forEach((f, i) => this.tone(f, 0.3, 'sine', 0.14, f * 1.5, i * 0.08)); break
+      case 'crate': this.noise(0.12, 0.5, 900, 200); [330, 440, 554, 740, 988].forEach((f, i) => this.tone(f, 0.12, 'square', 0.1, undefined, 0.1 + i * 0.05)); break
+      case 'letter': this.tone(988, 0.1, 'square', 0.12); this.tone(1480, 0.2, 'triangle', 0.16, undefined, 0.07); break
+      case 'atlanta': [523, 659, 784, 1047, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, 0.18, 'square', 0.12, undefined, i * 0.08)); break
+      case 'stumble': this.noise(0.25, 0.7, 700, 100); this.tone(190, 0.3, 'sawtooth', 0.22, 70); break
+      case 'smash': this.noise(0.3, 0.8, 5000, 300); this.tone(220, 0.2, 'square', 0.2, 60); break
+      case 'honk': this.tone(420, 0.16, 'sawtooth', 0.14, 330); this.tone(520, 0.2, 'sawtooth', 0.12, 400, 0.14); break
+      case 'end': this.tone(660, 0.1, 'triangle', 0.1, 330); break
+      case 'level': [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, 0.2, 'triangle', 0.18, undefined, i * 0.07)); break
       case 'tea': case 'board': [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.16, 'square', 0.1, undefined, i * 0.05)); break
       case 'pad': this.tone(200, 0.4, 'sawtooth', 0.14, 1400); this.noise(0.4, 0.3, 400, 4000, 'bandpass'); break
       case 'combo': [659, 880, 1175].forEach((f, i) => this.tone(f, 0.14, 'triangle', 0.2, undefined, i * 0.06)); break

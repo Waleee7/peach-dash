@@ -3,18 +3,22 @@ import '@fontsource/bungee'
 import '@fontsource/jetbrains-mono/500.css'
 import '@fontsource/jetbrains-mono/700.css'
 import * as THREE from 'three'
-import { Sim, laneX, LANE_W, type SimEvent } from './core/sim'
+import { Sim, laneX, LANE_W, LETTERS, STUMBLE_WINDOW, type SimEvent } from './core/sim'
 import { botAct } from './core/bot'
 import { CHARACTERS, charById } from './core/characters'
 import { loadSave, writeSave, applyRun, dailyMission, defaultSave, type Save } from './core/save'
 import { dateKey } from './core/rng'
+import { POWERS, POWER_KINDS, MAX_UPGRADE, buyUpgrade, upgradeCost, upgradeMul, type PowerKind } from './core/powers'
+import { applyMissions, levelMul, lettersFor, commitLetters, loginStatus, claimLogin, addToBoard, removeFromBoard, LOGIN_REWARDS, type BoardEntry, type RunStats } from './core/progress'
 import { World, Atmosphere, DISTRICTS, districtAt } from './game/world'
 import { Entities } from './game/entities'
+import { GooseFlock } from './game/models'
+import { PlayerFx } from './game/powerfx'
 import { Runner } from './game/chars'
 import { Haptics, Sound, Particles, SpeedLines } from './game/fx'
-import { bendU } from './game/gfx'
+import { bendU, iconURL } from './game/gfx'
 
-type Mode = 'title' | 'runners' | 'settings' | 'play' | 'pause' | 'over'
+type Mode = 'title' | 'runners' | 'settings' | 'powers' | 'scores' | 'login' | 'play' | 'pause' | 'over'
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const qs = new URLSearchParams(location.search)
 const rseed = () => Math.floor(Math.random() * 2147483647)
@@ -27,7 +31,8 @@ class Game {
   sim!: Sim; mode: Mode = 'title'; attract = true; botOn = false
   camPos = new THREE.Vector3(-3, 2, 6); camLook = new THREE.Vector3(0, 1.5, -6); camFov = 62
   shake = 0; hitStop = 0; sq = 0; phase = 0; clock = 0; last = performance.now(); lean = 0; dying = 0; fovKick = 0
-  idx = 0; committed = { peaches: 0, near: 0, dist: 0, jumps: 0 }; lastDistrict = -1; botT = 0
+  idx = 0; committed: RunStats = {}; lastDistrict = -1; botT = 0
+  geese!: GooseFlock; pfx!: PlayerFx; gooseFade = { v: 0 }; runEntry: BoardEntry | null = null; honkT = 3
   today = dateKey()
   private flash = $('flash'); private callEl = $('h-callout'); private distEl = $('h-district')
   private cache = new Map<string, string>()
@@ -47,6 +52,7 @@ class Game {
     this.world = new World(this.scene, this.save.settings.quality === 'low')
     this.ent = new Entities(this.scene)
     this.fx = new Particles(this.scene); this.lines = new SpeedLines(this.scene)
+    this.geese = new GooseFlock(); this.scene.add(this.geese.group); this.pfx = new PlayerFx(this.scene, o => this.fx.emit(o))
     for (const c of CHARACTERS) this.runners.set(c.id, new Runner(c.id))
     this.applySettings(); addEventListener('resize', () => this.resize())
     this.bindUI(); this.bindInput(); this.buildLogo(); this.buildSettings()
@@ -57,6 +63,7 @@ class Game {
     this.go(scr === 'play' ? 'title' : (scr as Mode), true)
     if (qs.get('char')) { this.idx = Number(qs.get('char')); this.showRunner(CHARACTERS[this.idx].id); this.renderRunnerCard() }
     if (scr === 'play') { this.botOn = qs.get('bot') === '1'; this.startRun(Number(qs.get('at')) || 0) }
+    else if (scr === 'title' && qs.get('login') !== '0' && loginStatus(this.save.login, this.today).pending) this.showLogin()
     this.last = performance.now(); requestAnimationFrame(t => this.frame(t))
     ;(window as unknown as { __peach: Game }).__peach = this
   }
@@ -79,17 +86,23 @@ class Game {
 
   /* ---------- state ---------- */
   startAttract(at = 0) {
-    this.sim = new Sim(rseed(), charById(this.save.selected).perk)
+    this.sim = this.makeSim(true)
     this.sim.invincible = true; if (at) this.sim.teleport(at); this.attract = true
     this.sim.onEvent = e => this.onEvent(e)
     this.world.reset(); this.world.warm(this.sim.dist, this.clock); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
   }
+  makeSim(attract: boolean) {
+    const L = lettersFor(this.save.letters, this.today)
+    const sim = new Sim(rseed(), charById(this.save.selected).perk, { levelMul: levelMul(this.save.missions.level), upgrades: this.save.upgrades, letterIdx: L.claimed ? LETTERS.length : L.idx, chaser: !attract })
+    sim.onEvent = e => this.onEvent(e)
+    return sim
+  }
   startRun(at = 0) {
     const ch = charById(this.save.selected)
-    this.sim = new Sim(rseed(), ch.perk); if (at) this.sim.teleport(at); this.attract = false
+    this.sim = this.makeSim(false); if (at) this.sim.teleport(at); this.attract = false
     this.sim.onEvent = e => this.onEvent(e)
     this.world.reset(); this.world.warm(this.sim.dist, this.clock); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
-    this.committed = { peaches: 0, near: 0, dist: 0, jumps: 0 }
+    this.committed = {}; this.runEntry = null; this.gooseFade.v = 0; this.honkT = 3
     this.showRunner(ch.id); this.dying = 0; this.hitStop = 0; this.shake = 0
     this.mode = 'play'; this.show('hud'); this.sound.unlock(); this.sound.startMusic()
     $('h-hint').classList.toggle('off', this.save.runs >= 2)
@@ -103,6 +116,8 @@ class Game {
     const apply = () => {
       this.mode = m; this.show(m === 'play' ? 'hud' : m)
       if (m === 'title') { this.sound.stopMusic(); this.refreshTitle(); this.showRunner(this.save.selected) }
+      if (m === 'powers') this.renderPowers()
+      if (m === 'scores') this.renderScores()
       if (m === 'runners') { this.idx = Math.max(0, CHARACTERS.findIndex(c => c.id === this.save.selected)); this.renderRunnerCard(); this.showRunner(CHARACTERS[this.idx].id) }
     }
     if (instant) return apply()
@@ -155,11 +170,35 @@ class Game {
         this.snd('near'); this.buzz('near'); this.addShake(0.3); this.fovKick = 7; this.lines.amount = 1.1
         this.callout('NEAR MISS!', `+${100 * s.perk.nearMul * s.mult} SCORE`)
         this.burst(p.x, p.y + 1, -0.5, 16, [0xffd166, 0xfff1d6, 0xff5e4a], { speed: 7, up: 1, size: 0.16, life: 0.4, grav: 2 }); break
-      case 'tea': case 'board': {
-        this.snd(e.t); this.buzz(e.t); this.addShake(0.35); this.doFlash(e.t === 'tea' ? '#ffb347' : '#2ec4b6', 0.4); this.fovKick = 8
-        this.callout(e.t === 'tea' ? 'SWEET TEA' : 'BELTLINE BOARD', e.t === 'tea' ? 'PEACH MAGNET ON' : 'SHIELD UP - TAKES A HIT')
-        this.burst(p.x, p.y + 1, -0.3, 46, e.t === 'tea' ? [0xffb347, 0xffd166, 0xfff1d6, 0xff8f6b] : [0x2ec4b6, 0x7ff0e2, 0xfff1d6, 0xffd166], { speed: 8, up: 4, size: 0.2, life: 0.9, grav: 8 }); break
+      case 'power': {
+        const k = e.k as PowerKind, D = POWERS[k]
+        this.snd(k); this.buzz(k); this.addShake(k === 'wing' ? 0.6 : 0.35); this.doFlash(D.css, 0.4); this.fovKick = k === 'wing' ? 16 : 8
+        this.callout(D.name, D.desc.toUpperCase())
+        if (k === 'wing') this.lines.amount = 1.4
+        const cols: Record<PowerKind, number[]> = { wing: [0xffd23d, 0xff9a2a, 0xfff08a, 0xff5e4a], tea: [0xffb347, 0xffd166, 0xfff1d6, 0xff8f6b], cobbler: [0xff8f6b, 0xffd166, 0xfff1d6, 0xc97a2c], kicks: [0xff4d6d, 0xfff1d6, 0xffd166, 0xff8f2a], glide: [0x6fe0d0, 0xfff1d6, 0xffd166, 0xff9f68], board: [0x2ec4b6, 0x7ff0e2, 0xfff1d6, 0xffd166] }
+        this.burst(p.x, p.y + 1, -0.3, 50, cols[k], { speed: 8, up: 4, size: 0.2, life: 0.9, grav: 8 }); break
       }
+      case 'powerEnd': this.snd('end'); this.buzz('end'); break
+      case 'crate':
+        this.snd('crate'); this.buzz('crate'); this.addShake(0.4); this.doFlash('#ffd166', 0.45)
+        this.callout('PEACH CRATE', e.k === 'peaches' ? `+${e.v} PEACHES` : 'MYSTERY POWER-UP')
+        this.burst(p.x, p.y + 1.2, -0.3, 40, [0xc98a4b, 0xffd166, 0xfff1d6, 0xff8f6b], { speed: 7, up: 5, size: 0.24, life: 0.9, grav: 10 }); break
+      case 'letter': {
+        this.snd('letter'); this.buzz('letter'); this.doFlash('#ffe066', 0.25)
+        this.callout(e.k ?? '', `ATLANTA ${(e.v ?? 0) + 1}/7`)
+        this.burst(p.x, p.y + 1.2, -0.3, 22, [0xffc83d, 0xfff0a0, 0xffffff], { speed: 6, up: 3, size: 0.18, life: 0.7, grav: 6 }); break
+      }
+      case 'atlanta':
+        this.snd('atlanta'); this.buzz('atlanta'); this.addShake(0.6); this.doFlash('#ffd166', 0.6); this.callout('ATLANTA!', 'DAILY REWARD IN THE BAG'); this.fovKick = 12
+        this.burst(p.x, p.y + 1.5, -0.3, 90, [0xffc83d, 0xff8f6b, 0xfff1d6, 0x2ec4b6, 0xff5e5b], { speed: 11, up: 5, size: 0.26, life: 1.2, grav: 8 }); break
+      case 'stumble':
+        this.snd('stumble'); this.buzz('stumble'); this.addShake(0.8); this.hitStop = 0.06; this.doFlash('#ff8a5a', 0.4); this.sq = -0.5
+        this.callout('STUMBLE!', 'ONE MORE CLIP AND YOU CRASH'); this.burst(p.x, 0.3, 0, 18, [0xfff1d6, 0xe8c9a0, 0xff8a5a], { speed: 5, up: 2, size: 0.22, life: 0.5, grav: 8 }); break
+      case 'smash':
+        this.snd('smash'); this.buzz('smash'); this.addShake(0.45); this.fovKick = 10
+        this.burst(laneX(e.lane ?? 1), 1, -0.6, 28, [0xffd23d, 0xff9a2a, 0xfff1d6, 0x6a5a80], { speed: 9, up: 4, size: 0.28, life: 0.8, grav: 12 }); break
+      case 'chaseEnd':
+        this.sound.sfx('honk'); this.callout(e.v ? 'FLOCK SCATTERED!' : 'LOST THE GEESE', e.v ? 'NO WINGS, NO PROBLEM' : 'KEEP RUNNING'); break
       case 'pad':
         this.snd('pad'); this.buzz('pad'); this.addShake(0.4); this.fovKick = 14; this.lines.amount = 1.3; this.doFlash('#ffe066', 0.35)
         this.callout('TURBO!', 'HOLD ON TO YOUR HAT'); this.burst(p.x, 0.3, 1, 30, [0xffd04a, 0xfff1d6, 0xff8f6b], { speed: 6, up: 2, size: 0.2, life: 0.6, grav: 6, vz: 14 }); break
@@ -170,6 +209,7 @@ class Game {
         if (this.mode !== 'play') break
         this.sound.sfx('crash'); Haptics.play('crash'); this.hitStop = 0.14; this.addShake(1.3); this.doFlash('#ff3b30', 0.55); this.sound.stopMusic()
         this.burst(p.x, p.y + 1, -0.6, 70, [0xff6b5b, 0xffc83d, 0xfff1d6, 0xff8f6b, 0x2b1a33], { speed: 11, up: 5, size: 0.32, life: 1.1, grav: 18 })
+        if (e.k === 'geese') this.callout('GOOSED!', 'THEY CAUGHT YOU')
         this.dying = 1; setTimeout(() => this.showOver(), this.save.settings.reduced ? 300 : 1000); break
       case 'revive':
         this.sound.sfx('revive'); Haptics.play('revive'); this.doFlash('#ffd166', 0.6); this.addShake(0.4)
@@ -178,35 +218,80 @@ class Game {
   }
 
   /* ---------- run end ---------- */
+  runStats(): RunStats {
+    const st = this.sim.stats
+    return { peaches: st.peaches, near: st.near, jumps: st.jumps, slides: st.slides, powerups: st.powerups, crates: st.crates, train: Math.floor(st.trainDist), letters: st.letters, smashed: st.smashed, geese: st.geese, dist: Math.floor(this.sim.dist), combo: st.maxCombo, score: Math.floor(this.sim.score) }
+  }
   commit() {
-    const st = this.sim.stats, d = { peaches: st.peaches, near: st.near, dist: Math.floor(this.sim.dist), jumps: st.jumps }
-    const delta = { peaches: d.peaches - this.committed.peaches, near: d.near - this.committed.near, dist: d.dist - this.committed.dist, jumps: d.jumps - this.committed.jumps, score: this.sim.score }
+    const cur = this.runStats(), delta: RunStats = {}
+    for (const k of Object.keys(cur) as (keyof RunStats)[]) delta[k] = (cur[k] ?? 0) - (this.committed[k] ?? 0)
     const prevBest = this.save.best, runsBefore = this.save.runs
-    const reward = applyRun(this.save, this.today, delta)
-    if (this.committed.dist > 0) this.save.runs = runsBefore
-    this.committed = d; this.persist()
-    return { reward, isBest: Math.floor(this.sim.score) > prevBest }
+    const reward = applyRun(this.save, this.today, { peaches: delta.peaches ?? 0, near: delta.near ?? 0, dist: delta.dist ?? 0, jumps: delta.jumps ?? 0, score: this.sim.score })
+    const m = applyMissions(this.save.missions, delta, cur)
+    this.save.peaches += m.reward
+    const letterReward = commitLetters(this.save.letters, this.today, this.sim.letterIdx)
+    this.save.peaches += letterReward
+    if ((this.committed.dist ?? 0) > 0) this.save.runs = runsBefore
+    this.committed = cur; this.persist()
+    return { reward, isBest: Math.floor(this.sim.score) > prevBest, missions: m, letterReward }
   }
   reviveCost() { return Math.min(400, 100 + Math.floor(this.sim.dist / 40) * 5) }
   showOver() {
     if (this.mode !== 'play') return
     const r = this.commit(), s = this.sim, m = dailyMission(this.today)
     this.mode = 'over'; this.show('over')
+    const entry: BoardEntry = { score: Math.floor(s.score), dist: Math.floor(s.dist), char: this.save.selected, date: this.today }
+    const rank = addToBoard(this.save.board, entry); this.runEntry = rank ? entry : null; this.persist()
     $('o-score').textContent = Math.floor(s.score).toLocaleString()
     $('o-grid').innerHTML = [['DISTANCE', `${Math.floor(s.dist)} m`], ['PEACHES', `+${Math.floor(s.peaches)}`], ['NEAR MISSES', s.stats.near], ['BEST COMBO', s.stats.maxCombo]].map(([a, b]) => `<div class="cell">${a}<b>${b}</b></div>`).join('')
     const dp = this.save.daily
     $('o-daily').innerHTML = r.reward ? `DAILY COMPLETE: ${m.text} <b>+${r.reward}</b> peaches` : dp.claimed ? 'DAILY MISSION DONE. COME BACK TOMORROW.' : `DAILY: ${m.text} (${Math.min(dp.progress, m.target)}/${m.target})`
+    const L = this.save.letters, ex: string[] = []
+    if (rank) ex.push(`<b>RANK #${rank}</b> ON YOUR TOP 10`)
+    for (const d of r.missions.done) ex.push(`MISSION DONE: ${d.text}`)
+    if (r.missions.levelUp) ex.push(`<b>LEVEL ${this.save.missions.level}!</b> SCORE x${levelMul(this.save.missions.level).toFixed(1)} &middot; +${r.missions.reward} peaches`)
+    ex.push(r.letterReward ? `<b>ATLANTA COMPLETE</b> +${r.letterReward} peaches` : L.claimed ? 'ATLANTA HUNT DONE TODAY' : `ATLANTA HUNT: ${LETTERS.slice(0, L.idx)}${'_'.repeat(LETTERS.length - L.idx)}`)
+    $('o-extra').innerHTML = ex.map(x => `<div>${x}</div>`).join('')
     const b = $<HTMLButtonElement>('o-second'), cost = this.reviveCost()
     b.hidden = s.reviveUsed; b.disabled = this.save.peaches < cost
     b.innerHTML = `SECOND CHANCE <i class="pdot"></i> ${cost}${b.disabled ? ' (NEED MORE)' : ''}`
-    $('o-ribbon').textContent = r.isBest && s.score > 0 ? 'NEW HIGH SCORE' : ['WIPED OUT', 'FOOD TRUCK 1, YOU 0', 'THAT WAS A WALL', 'ATL TRAFFIC WINS'][Math.floor(Math.random() * 4)]
+    $('o-ribbon').textContent = r.isBest && s.score > 0 ? 'NEW HIGH SCORE' : s.crashCause === 'geese' ? 'GOOSED' : ['WIPED OUT', 'FOOD TRUCK 1, YOU 0', 'THAT WAS A WALL', 'ATL TRAFFIC WINS'][Math.floor(Math.random() * 4)]
   }
 
   /* ---------- UI ---------- */
   refreshTitle() {
     $('t-peaches').textContent = String(this.save.peaches); $('t-best').textContent = this.save.best.toLocaleString()
-    const m = dailyMission(this.today), d = this.save.daily.date === this.today ? this.save.daily : { progress: 0, claimed: false }
-    $('t-daily').innerHTML = d.claimed ? '<b>DAILY DONE</b>New mission tomorrow.' : `<b>DAILY: ${m.text}</b>${Math.min(d.progress, m.target)}/${m.target} &middot; REWARD +${m.reward}<div class="meter"><i style="width:${Math.min(100, (d.progress / m.target) * 100)}%"></i></div>`
+    const mi = this.save.missions, dm = dailyMission(this.today), dd = this.save.daily.date === this.today ? this.save.daily : { progress: 0, claimed: false }
+    const row = (text: string, p: number, t: number, done: boolean) => `<div class="mrow ${done ? 'done' : ''}"><i></i><span>${text}</span><em>${Math.min(p, t)}/${t}</em><div class="mb"><u style="width:${Math.min(100, (p / t) * 100)}%"></u></div></div>`
+    const L = lettersFor(this.save.letters, this.today)
+    $('t-daily').innerHTML = `<div class="lv"><span>LEVEL ${mi.level}</span><em>SCORE x${levelMul(mi.level).toFixed(1)}</em></div>` + mi.items.map(m => row(m.text, m.progress, m.target, m.progress >= m.target)).join('')
+      + (dd.claimed ? '' : row(`DAILY: ${dm.text} (+${dm.reward})`, dd.progress, dm.target, false))
+      + `<div class="hunt">${[...LETTERS].map((c, i) => `<b class="${i < L.idx ? 'f' : ''}">${c}</b>`).join('')}<span>${L.claimed ? 'DONE TODAY' : 'DAILY HUNT'}</span></div>`
+  }
+  /* power-up shop */
+  renderPowers() {
+    $('p-peaches').textContent = String(this.save.peaches)
+    $('p-list').innerHTML = POWER_KINDS.map(k => {
+      const D = POWERS[k], lv = this.save.upgrades[k], max = lv >= MAX_UPGRADE, cost = upgradeCost(lv)
+      return `<div class="prow"><img src="${iconURL(k, D.css)}" alt=""><div><b>${D.name}</b><span>${D.desc} ${(D.base * upgradeMul(lv)).toFixed(0)}s</span><div class="pips2">${Array.from({ length: MAX_UPGRADE }, (_, i) => `<i class="${i < lv ? 'f' : ''}"></i>`).join('')}</div></div>`
+        + `<button class="btn sm ${max ? 'own' : ''}" data-act="up:${k}" ${max || this.save.peaches < cost ? 'disabled' : ''}>${max ? 'MAX' : `+20% <i class="pdot"></i> ${cost}`}</button></div>`
+    }).join('')
+  }
+  upgrade(k: PowerKind) {
+    const c = buyUpgrade(this.save.upgrades, this.save.peaches, k)
+    if (c === false) { Haptics.play('crash'); return }
+    this.save.peaches -= c; this.persist(); this.sound.sfx('buy'); Haptics.play('buy'); this.renderPowers()
+  }
+  renderScores() {
+    const b = this.save.board
+    $('sc-list').innerHTML = b.length ? b.map((e, i) => `<div class="srow ${e === this.runEntry ? 'me' : ''}"><span>#${i + 1}</span><b>${e.score.toLocaleString()}</b><em>${e.dist} m &middot; ${charById(e.char).name} &middot; ${e.date.slice(5)}</em></div>`).join('') : '<p class="sub">No runs yet. Go set one.</p>'
+  }
+  showLogin() {
+    const st = loginStatus(this.save.login, this.today)
+    $('l-title').textContent = st.streak > 1 ? `DAY ${st.day} STREAK` : 'WELCOME BACK'
+    $('l-days').innerHTML = LOGIN_REWARDS.map((r, i) => `<div class="day ${i + 1 === st.day ? 'on' : i + 1 < st.day ? 'past' : ''}">D${i + 1}<b>${r}</b></div>`).join('')
+    $('l-claim').innerHTML = `CLAIM <i class="pdot"></i> +${st.reward}`
+    this.mode = 'login'; this.show('login')
   }
   buildLogo() {
     const f = (id: string, t: string, off: number) => { $(id).innerHTML = [...t].map((c, i) => `<span style="--k:${i + off}">${c}</span>`).join('') }
@@ -249,7 +334,14 @@ class Game {
   act(a: string) {
     this.sound.unlock(); Haptics.play('ui')
     if (a !== 'action' && a !== 'second') this.sound.sfx('ui')
+    if (a.startsWith('up:')) return this.upgrade(a.slice(3) as PowerKind)
     switch (a) {
+      case 'powers': this.go('powers'); break
+      case 'scores': this.go('scores'); break
+      case 'claim': {
+        const r = claimLogin(this.save.login, this.today); this.save.peaches += r; this.persist(); this.sound.sfx('level'); Haptics.play('level'); this.doFlash('#ffd166', 0.5)
+        this.burst(0, 1.2, 0, 60, [0xffd166, 0xff8f6b, 0xfff1d6, 0x2ec4b6], { speed: 8, up: 4, size: 0.22, life: 1, grav: 6 }); this.go('title', true); break
+      }
       case 'play': this.wipe(() => this.startRun()); break
       case 'again': if (this.mode === 'over') this.wipe(() => this.startRun()); break
       case 'runners': this.go('runners'); break
@@ -263,7 +355,7 @@ class Game {
       case 'quit': this.wipe(() => { this.sound.stopMusic(); this.startAttract(); this.mode = 'title'; this.show('title'); this.refreshTitle(); this.showRunner(this.save.selected) }); break
       case 'second': {
         const cost = this.reviveCost(); if (this.save.peaches < cost || this.sim.reviveUsed) return
-        this.save.peaches -= cost; this.persist(); this.sim.revive(); this.dying = 0; this.mode = 'play'; this.show('hud'); this.sound.startMusic(); break
+        this.save.peaches -= cost; if (this.runEntry) { removeFromBoard(this.save.board, this.runEntry); this.runEntry = null } this.persist(); this.sim.revive(); this.dying = 0; this.mode = 'play'; this.show('hud'); this.sound.startMusic(); break
       }
     }
   }
@@ -326,13 +418,21 @@ class Game {
       if (this.cache.get('mult') !== t) { this.cache.set('mult', t); const m = $('h-mult'); m.textContent = t; m.classList.remove('bump'); void m.offsetWidth; m.classList.add('bump') }
       $('h-combobar').style.transform = `scaleX(${Math.max(0, s.comboT / 2.6)})`
     }
-    const pw: [string, string, number, number, string][] = [['tea', 'SWEET TEA', s.tea, 10 * s.perk.powerMul, '#ffb347'], ['board', 'BOARD', s.board, 18 * s.perk.powerMul, '#2ec4b6']]
     const box = $('h-powers')
-    for (const [k, label, v, max, col] of pw) {
+    for (const k of POWER_KINDS) {
+      const v = s.pw[k], D = POWERS[k]
       let el = box.querySelector<HTMLElement>(`[data-p="${k}"]`)
-      if (v > 0 && !el) { el = document.createElement('div'); el.className = 'pw'; el.dataset.p = k; el.innerHTML = `<i class="ic" style="background:${col}"></i><span>${label}</span><div class="t"><u></u></div>`; box.appendChild(el) }
-      if (el) { if (v <= 0) el.remove(); else (el.querySelector('u') as HTMLElement).style.width = `${Math.min(100, (v / max) * 100)}%` }
+      if (v > 0 && !el) { el = document.createElement('div'); el.className = 'pw'; el.dataset.p = k; el.innerHTML = `<img src="${iconURL(k, D.css)}" alt=""><span>${D.short}</span><div class="t"><u style="background:${D.css}"></u></div>`; box.appendChild(el) }
+      if (el) { if (v <= 0) el.remove(); else { (el.querySelector('u') as HTMLElement).style.width = `${Math.min(100, (v / s.powerMax[k]) * 100)}%`; el.style.opacity = v < 2 && Math.floor(this.clock * 8) % 2 ? '0.45' : '1' } }
     }
+    const lt = $('h-letters'), li = s.letterIdx, lk = `L${li}`
+    if (this.cache.get('let') !== lk) {
+      this.cache.set('let', lk); lt.classList.toggle('on', li > 0)
+      lt.innerHTML = [...LETTERS].map((c, i) => `<b class="${i < li ? 'f' : ''}${i === li - 1 ? ' pop' : ''}">${c}</b>`).join('')
+    }
+    const dg = $('h-danger'), win = STUMBLE_WINDOW * s.perk.stumbleMul
+    dg.classList.toggle('on', s.stumbleT > 0 && s.state === 'run')
+    if (s.stumbleT > 0) (dg.querySelector('i') as HTMLElement).style.transform = `scaleX(${Math.max(0, s.stumbleT / win)})`
     const d = districtAt(s.dist + 25)
     if (d !== this.lastDistrict) {
       this.lastDistrict = d; const D = DISTRICTS[d]
@@ -348,7 +448,7 @@ class Game {
     const s = this.sim, reduced = this.save.settings.reduced
     let ts = 1
     if (this.hitStop > 0) { this.hitStop -= real; ts = 0 }
-    const live = this.mode === 'play' || (this.attract && (this.mode === 'title' || this.mode === 'runners' || this.mode === 'settings'))
+    const live = this.mode === 'play' || (this.attract && ['title', 'runners', 'settings', 'powers', 'scores', 'login'].includes(this.mode))
     if (this.mode === 'pause' || this.mode === 'over') ts = 0
     if (this.mode === 'runners' || this.mode === 'settings') ts *= 0.18
     if (live && ts > 0 && s.state === 'run') {
@@ -363,15 +463,17 @@ class Game {
     if (ts > 0 && running) this.phase += dt * (8 + s.speed * 0.3)
     const tgt = laneX(p.lane) - p.x
     this.lean += ((tgt / LANE_W) * 1.8 - this.lean) * (1 - Math.exp(-dt * 14))
-    this.cur.update(dt, { phase: this.phase, air: p.y > 0.06 && s.state === 'run', slide: p.slide > 0 ? 1 : 0, lean: this.lean, crash: s.state === 'dead' ? 1 : 0, idle: still, t: this.clock })
+    this.cur.update(dt, { phase: this.phase, air: p.y > 0.06 && s.state === 'run', slide: p.slide > 0 ? 1 : 0, lean: this.lean, crash: s.state === 'dead' ? 1 : 0, idle: still, t: this.clock, stumble: s.stumbleFx > 0 ? Math.min(1, s.stumbleFx / 0.9) : 0, glide: s.pw.glide > 0 && s.state === 'run' })
     const showcase = this.mode === 'runners'
     const r = this.cur.root, sc = this.cur.look.scale
     this.sq += (0 - this.sq) * (1 - Math.exp(-dt * 9))
     r.scale.set(sc * (1 + this.sq * 0.14), sc * (1 - this.sq * 0.2), sc * (1 + this.sq * 0.14))
     r.position.set(showcase ? 0 : p.x, p.y, 0)
     r.rotation.y += ((showcase ? Math.PI * 0.88 : 0) - r.rotation.y) * (1 - Math.exp(-dt * 8))
-    r.visible = s.invuln > 0 && s.state === 'run' && !this.attract ? Math.floor(this.clock * 18) % 2 === 0 : true
-    if (s.board > 0 && this.mode === 'play' && Math.random() < 0.5) this.fx.emit({ x: p.x + (Math.random() - 0.5) * 0.8, y: p.y + 0.1, z: 0.3, n: 1, colors: [0x2ec4b6, 0x7ff0e2], speed: 0.8, up: 0.5, size: 0.13, life: 0.5, grav: 0 })
+    r.visible = s.invuln > 0 && s.state === 'run' && !this.attract && s.pw.wing <= 0 && s.pw.glide <= 0 && s.pw.board <= 0 ? Math.floor(this.clock * 18) % 2 === 0 : true
+    this.pfx.update(s, this.clock, this.mode === 'play' && ts > 0, reduced)
+    this.geese.update(this.mode === 'play' && s.chase.on && s.state === 'run', s.chase.gap, p.x, this.clock, this.gooseFade)
+    if (this.mode === 'play' && s.chase.on && s.state === 'run' && ts > 0 && (this.honkT -= real) <= 0) { this.honkT = 1.4 + Math.random() * 1.6; this.sound.sfx('honk'); Haptics.play('honk') }
     if (running && ts > 0 && !p.air && Math.random() < 0.35) this.fx.emit({ x: p.x + (Math.random() - 0.5) * 0.4, y: 0.08, z: 0.2, n: 1, colors: [0xfff1d6, 0xe8c9a0], speed: 1, up: 0.8, size: 0.14, life: 0.4, grav: 2, vz: 2 })
     // world
     this.atm.update(s.dist, this.clock, this.camera.position, this.world.winMats)
@@ -379,7 +481,7 @@ class Game {
     this.world.update(s.dist, this.clock)
     this.ent.update(s, this.clock)
     this.fx.update(dt * (this.hitStop > 0 ? 0.15 : 1), running ? s.speed : 0)
-    const want = reduced || !running ? 0 : Math.min(1, Math.max(0, (s.speed - 21) / 15)) * 0.6 + (s.boost > 0 ? 0.7 : 0)
+    const want = reduced || !running ? 0 : Math.min(1, Math.max(0, (s.speed - 21) / 15)) * 0.6 + (s.boost > 0 ? 0.7 : 0) + (s.pw.wing > 0 ? 0.8 : 0)
     this.lines.amount += (want - this.lines.amount) * (1 - Math.exp(-dt * 6))
     this.lines.update(dt, s.speed, this.camera.position.x, this.camera.position.y, this.camera.position.z)
     this.sound.intensity = Math.min(1, Math.max(0, (s.speed - 17) / 19))
@@ -392,7 +494,7 @@ class Game {
     const s = this.sim, p = s.p, pf = this.portrait, wide = this.camera.aspect > 1.2
     const back = 8.2 + 3.2 * pf, h = 5.1 + 1.7 * pf
     let pos: THREE.Vector3, look: THREE.Vector3, fov = 66 + 12 * pf
-    if (this.mode === 'title') {
+    if (this.mode === 'title' || this.mode === 'powers' || this.mode === 'scores' || this.mode === 'login') {
       pos = new THREE.Vector3(wide ? -3.4 : -2.4, 1.9 + pf * 0.6, 5.4 + pf * 1.5); look = new THREE.Vector3(wide ? -0.6 : 0.3, 1.8 - pf * 1.5, -5); fov = 52 + 14 * pf
     } else if (this.mode === 'runners' || this.mode === 'settings') {
       pos = new THREE.Vector3(wide ? 3.2 : 1.1, 1.5 + pf * 0.3, 4.6 + pf * 3.6); look = new THREE.Vector3(wide ? 0.4 : 0, 1.35 - pf * 1.5, 0); fov = 46 + 12 * pf

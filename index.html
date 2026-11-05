@@ -16,7 +16,7 @@
     <section id="title" class="screen">
       <header class="top">
         <div class="chip"><i class="pdot"></i><b id="t-peaches">0</b></div>
-        <div class="chip mono">BEST <b id="t-best">0</b></div>
+        <div class="row hdr"><div class="chip mono">BEST <b id="t-best">0</b></div><button class="gear" data-act="settings" aria-label="Settings">SET</button></div>
       </header>
       <div class="logo">
         <div class="ribbon" data-in style="--i:0">ATLANTA, GA &nbsp;/&nbsp; ENDLESS RUN</div>
@@ -29,7 +29,8 @@
           <button class="btn big" data-act="play" data-in style="--i:8">PLAY</button>
           <div class="row">
             <button class="btn" data-act="runners" data-in style="--i:9">RUNNERS</button>
-            <button class="btn alt" data-act="settings" data-in style="--i:10">SETTINGS</button>
+            <button class="btn alt" data-act="powers" data-in style="--i:10">POWERS</button>
+            <button class="btn" data-act="scores" data-in style="--i:11">SCORES</button>
           </div>
         </div>
       </div>
@@ -51,6 +52,20 @@
       </div>
     </section>
 
+    <section id="powers" class="screen">
+      <header class="top"><button class="btn sm" data-act="back">BACK</button><div class="chip"><i class="pdot"></i><b id="p-peaches">0</b></div></header>
+      <div class="panel wide"><h2>POWER-UPS</h2><p class="sub">Spend peaches to make each one last longer.</p><div id="p-list"></div></div>
+    </section>
+
+    <section id="scores" class="screen">
+      <header class="top"><button class="btn sm" data-act="back">BACK</button></header>
+      <div class="panel wide"><h2>TOP 10 RUNS</h2><div id="sc-list"></div></div>
+    </section>
+
+    <section id="login" class="screen dim">
+      <div class="panel wide"><div class="ribbon">DAILY LOGIN</div><h2 id="l-title">WELCOME BACK</h2><div class="days" id="l-days"></div><button class="btn big" data-act="claim" id="l-claim">CLAIM</button></div>
+    </section>
+
     <section id="settings" class="screen">
       <header class="top"><button class="btn sm" data-act="back">BACK</button></header>
       <div class="panel">
@@ -70,6 +85,8 @@
         <div class="chip"><i class="pdot"></i><b id="h-peaches">0</b></div>
         <button class="pause" data-act="pause" aria-label="Pause"><i></i><i></i></button>
       </div>
+      <div class="letters" id="h-letters"></div>
+      <div class="danger" id="h-danger"><span>STUMBLED - ONE MORE CLIP CRASHES</span><i></i></div>
       <div class="combo" id="h-combo"><span id="h-mult">x1</span><div class="bar"><i id="h-combobar"></i></div></div>
       <div class="callout" id="h-callout"></div>
       <div class="district" id="h-district"><small>NOW ENTERING</small><b></b><em></em></div>
@@ -90,6 +107,7 @@
         <div class="o-score"><small class="mono">SCORE</small><b id="o-score">0</b></div>
         <div class="grid" id="o-grid"></div>
         <div class="o-daily" id="o-daily"></div>
+        <div class="o-extra" id="o-extra"></div>
         <button class="btn big second" id="o-second" data-act="second"></button>
         <div class="row">
           <button class="btn" data-act="again">RUN AGAIN</button>

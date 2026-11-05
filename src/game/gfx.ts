@@ -178,6 +178,13 @@ export function groundTexture(kind: GroundKind) {
   return tex(c)
 }
 
+export function haloTexture() {
+  const c = mk(64, 64), x = c.getContext('2d')!, g = x.createRadialGradient(32, 32, 0, 32, 32, 32)
+  g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(0.35, 'rgba(255,255,255,.28)'); g.addColorStop(1, 'rgba(255,255,255,0)')
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64)
+  return tex(c)
+}
+
 export function glowTexture() {
   const c = mk(64, 64), x = c.getContext('2d')!, g = x.createRadialGradient(32, 32, 0, 32, 32, 32)
   g.addColorStop(0, 'rgba(0,0,0,.55)'); g.addColorStop(1, 'rgba(0,0,0,0)')
@@ -185,21 +192,23 @@ export function glowTexture() {
   return tex(c)
 }
 
-export function iconTexture(kind: 'tea' | 'board') {
-  const c = mk(128, 128), x = c.getContext('2d')!
-  x.fillStyle = '#3a2a4d'; x.beginPath(); x.arc(64, 64, 62, 0, 7); x.fill()
-  x.fillStyle = kind === 'tea' ? '#ffb347' : '#2ec4b6'; x.beginPath(); x.arc(64, 64, 54, 0, 7); x.fill()
-  x.fillStyle = 'rgba(255,255,255,.35)'; x.beginPath(); x.arc(44, 40, 20, 0, 7); x.fill()
-  x.fillStyle = '#fff1d6'; x.strokeStyle = '#3a2a4d'; x.lineWidth = 5; x.lineJoin = 'round'
-  if (kind === 'tea') {
-    x.beginPath(); x.moveTo(42, 42); x.lineTo(86, 42); x.lineTo(80, 100); x.lineTo(48, 100); x.closePath(); x.fill(); x.stroke()
-    x.fillStyle = '#c4601a'; x.fillRect(46, 56, 36, 38); x.fillStyle = '#ffe066'; x.beginPath(); x.arc(86, 46, 11, 0, 7); x.fill(); x.stroke()
-    x.strokeStyle = '#ff5e5b'; x.lineWidth = 6; x.beginPath(); x.moveTo(66, 38); x.lineTo(76, 14); x.stroke()
-  } else {
-    x.beginPath(); x.roundRect(22, 56, 84, 22, 11); x.fill(); x.stroke()
-    x.fillStyle = '#ff6b6b'; x.fillRect(36, 62, 56, 10)
-    x.fillStyle = '#fff1d6'; x.strokeStyle = '#3a2a4d'; x.beginPath(); x.moveTo(34, 92); x.lineTo(94, 92); x.lineTo(84, 104); x.lineTo(44, 104); x.closePath(); x.fill(); x.stroke()
-    x.fillStyle = '#ffd166'; x.fillRect(58, 30, 12, 20)
-  }
-  return tex(c)
+/** HUD / shop icon as a data URL: coloured disc + a simple glyph per power-up. */
+const iconCache = new Map<string, string>()
+export function iconURL(kind: string, color: string): string {
+  const key = kind + color, hit = iconCache.get(key); if (hit) return hit
+  const c = mk(96, 96), x = c.getContext('2d')!
+  x.fillStyle = '#2b1a33'; x.beginPath(); x.arc(48, 48, 46, 0, 7); x.fill()
+  x.fillStyle = color; x.beginPath(); x.arc(48, 48, 40, 0, 7); x.fill()
+  x.fillStyle = 'rgba(255,255,255,.35)'; x.beginPath(); x.arc(34, 32, 14, 0, 7); x.fill()
+  x.fillStyle = '#fff1d6'; x.strokeStyle = '#2b1a33'; x.lineWidth = 4; x.lineJoin = 'round'
+  const poly = (pts: number[][]) => { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.closePath(); x.fill(); x.stroke() }
+  if (kind === 'wing') { x.beginPath(); x.moveTo(50, 52); x.lineTo(70, 72); x.lineWidth = 8; x.strokeStyle = '#fff1d6'; x.stroke(); x.lineWidth = 4; x.strokeStyle = '#2b1a33'; x.beginPath(); x.arc(72, 68, 5, 0, 7); x.arc(66, 76, 5, 0, 7); x.fillStyle = '#fff1d6'; x.fill(); x.stroke(); x.fillStyle = '#d9822b'; x.beginPath(); x.ellipse(38, 40, 20, 16, -0.7, 0, 7); x.fill(); x.stroke(); x.fillStyle = '#ffe84a'; x.beginPath(); x.arc(48, 30, 7, 0, 7); x.fill() }
+  else if (kind === 'tea') { poly([[32, 30], [64, 30], [58, 72], [38, 72]]); x.fillStyle = '#c4601a'; x.fillRect(36, 44, 24, 24); x.strokeStyle = '#ff5e5b'; x.lineWidth = 5; x.beginPath(); x.moveTo(52, 28); x.lineTo(60, 12); x.stroke() }
+  else if (kind === 'cobbler') { x.beginPath(); x.ellipse(48, 56, 26, 11, 0, 0, 7); x.fill(); x.stroke(); x.font = 'bold 30px Bungee, Impact, sans-serif'; x.textAlign = 'center'; x.lineWidth = 5; x.strokeText('2x', 48, 46); x.fillStyle = '#ffd166'; x.fillText('2x', 48, 46) }
+  else if (kind === 'kicks') { poly([[26, 56], [26, 40], [40, 36], [52, 50], [72, 54], [72, 66], [26, 66]]); x.fillStyle = '#ff4d6d'; x.fillRect(30, 44, 14, 10) }
+  else if (kind === 'glide') { x.beginPath(); x.arc(48, 46, 20, 0, 7); x.stroke(); for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.283; x.beginPath(); x.moveTo(48, 46); x.lineTo(48 + Math.cos(a) * 20, 46 + Math.sin(a) * 20); x.stroke() } x.fillStyle = '#ff8f2a'; poly([[40, 68], [56, 68], [48, 82]]) }
+  else if (kind === 'board') { x.beginPath(); x.roundRect(20, 44, 56, 14, 7); x.fill(); x.stroke(); x.fillStyle = '#ff6b6b'; x.fillRect(32, 48, 32, 6) }
+  else if (kind === 'crate') { x.fillRect(24, 28, 48, 42); x.strokeRect(24, 28, 48, 42); x.fillStyle = '#2b1a33'; x.font = 'bold 34px Bungee, Impact, sans-serif'; x.textAlign = 'center'; x.fillText('?', 48, 62) }
+  else { x.fillStyle = '#2b1a33'; x.font = 'bold 40px Bungee, Impact, sans-serif'; x.textAlign = 'center'; x.fillText(kind.slice(0, 1).toUpperCase(), 48, 62) }
+  const url = c.toDataURL(); iconCache.set(key, url); return url
 }
