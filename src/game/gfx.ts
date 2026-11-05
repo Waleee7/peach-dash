@@ -7,10 +7,10 @@ export const bendU = { uBend: { value: 0.00032 }, uCurve: { value: 0 }, uFade: {
 const bendChunk = THREE.ShaderChunk.project_vertex.replace(
   'gl_Position',
   'float bz = max(-mvPosition.z - 12.0, 0.0); mvPosition.y -= bz*bz*uBend; mvPosition.x += bz*bz*uCurve;\n gl_Position')
-export function bend<T extends THREE.Material>(m: T): T {
+export function bend<T extends THREE.Material>(m: T, fade = true): T {
   m.onBeforeCompile = sh => {
     sh.uniforms.uBend = bendU.uBend; sh.uniforms.uCurve = bendU.uCurve; sh.uniforms.uFade = bendU.uFade
-    sh.fragmentShader = sh.fragmentShader.replace('void main() {', `uniform vec2 uFade;
+    if (fade) sh.fragmentShader = sh.fragmentShader.replace('void main() {', `uniform vec2 uFade;
 void main() {
 #ifdef USE_FOG
   float fk = clamp((vFogDepth - uFade.x) / (uFade.y - uFade.x), 0.0, 1.0);

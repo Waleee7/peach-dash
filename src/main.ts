@@ -105,8 +105,8 @@ class Game {
     this.committed = {}; this.runEntry = null; this.gooseFade.v = 0; this.honkT = 3
     this.showRunner(ch.id); this.dying = 0; this.hitStop = 0; this.shake = 0
     this.mode = 'play'; this.show('hud'); this.sound.unlock(); this.sound.startMusic()
-    $('h-hint').classList.toggle('off', this.save.runs >= 2)
-    if (this.save.runs < 2) setTimeout(() => $('h-hint').classList.add('off'), 5500)
+    $('h-hint').classList.remove('off')
+    setTimeout(() => $('h-hint').classList.add('off'), this.save.runs < 2 ? 3200 : 1)
     this.callout('GO!', '', true); Haptics.play('go'); this.sound.sfx('go')
   }
   show(id: string | null) {
@@ -476,6 +476,7 @@ class Game {
     if (this.mode === 'play' && s.chase.on && s.state === 'run' && ts > 0 && (this.honkT -= real) <= 0) { this.honkT = 1.4 + Math.random() * 1.6; this.sound.sfx('honk'); Haptics.play('honk') }
     if (running && ts > 0 && !p.air && Math.random() < 0.35) this.fx.emit({ x: p.x + (Math.random() - 0.5) * 0.4, y: 0.08, z: 0.2, n: 1, colors: [0xfff1d6, 0xe8c9a0], speed: 1, up: 0.8, size: 0.14, life: 0.4, grav: 2, vz: 2 })
     // world
+    this.world.portrait = this.portrait; this.geese.pf = this.portrait
     this.atm.update(s.dist, this.clock, this.camera.position, this.world.winMats)
     bendU.uCurve.value = Math.sin(s.dist / 520) * 0.00035 * (reduced ? 0.4 : 1)
     this.world.update(s.dist, this.clock)

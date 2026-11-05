@@ -14,7 +14,7 @@ export const DISTRICTS = [
 export const districtAt = (dist: number) => Math.floor(dist / DISTRICT_LEN) % 3
 /** Streaming + draw distance. Everything is built past FOG_FAR so it only ever fades IN from fog, never pops. */
 export const FOG_NEAR = 70
-export const FOG_FAR = 330
+export const FOG_FAR = 300
 const FAR = 400
 const CAPX = 1.9
 
@@ -34,7 +34,8 @@ void main(){
   vec3 d = normalize(vDir); float h = clamp(d.y,0.0,1.0);
   vec3 col = mix(uHor, uTop, pow(h,0.5));
   vec3 sd = normalize(vec3(0.0, uSunH, -1.0)); float s = max(dot(d,sd),0.0);
-  col += uSun*(pow(s,900.0)*2.0 + pow(s,60.0)*0.5 + pow(s,7.0)*0.28);
+  float hz = 0.3 + 0.7*smoothstep(0.0, 0.22, d.y);   // keep the wide glow off the horizon so the fogged road meets it without an edge
+  col += uSun*(pow(s,900.0)*2.0*hz + (pow(s,60.0)*0.5 + pow(s,7.0)*0.28)*hz*hz);
   vec3 g = floor(d*130.0); float r = h3(g);
   float st = step(0.9965, r) * smoothstep(0.08,0.4,d.y) * uStars * (0.6+0.4*sin(uTime*3.0+r*90.0));
   col += vec3(1.0,0.95,0.85)*st;
@@ -69,6 +70,7 @@ export class Atmosphere {
     this.mix(a.hemiS, b.hemiS, sf, this.hemi.color); this.mix(a.hemiG, b.hemiG, sf, this.hemi.groundColor); this.hemi.intensity = L(a.hemiI, b.hemiI)
     this.mix(a.dir, b.dir, sf, this.dir.color); this.dir.intensity = L(a.dirI, b.dirI)
     this.night = L(a.win, b.win)
+    this.u.uHor.value.lerp(this.u.uSun.value, 0.1)
     const fog = this.scene.fog as THREE.Fog; fog.color.copy(this.u.uHor.value)
     ;(this.ground.material as THREE.MeshBasicMaterial).color.copy(fog.color)
     for (const m of winMats) m.emissiveIntensity = this.night * 1.15
@@ -259,14 +261,15 @@ export class World {
   groundGeo = wideGround()
   ferris: FerrisRig
   ferrisActive = false
+  portrait = 0
   private m4 = new THREE.Matrix4(); private col = new THREE.Color()
   private tmpColor = new Float32Array(3)
 
   constructor(scene: THREE.Scene, public lowQuality = false) {
     this.scene = scene
     const wt = windowTextures(false), bt = windowTextures(true)
-    const glassMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true, map: wt.map, emissive: 0xffffff, emissiveMap: wt.emissive, emissiveIntensity: 0 }))
-    const brickMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true, map: bt.map, emissive: 0xffffff, emissiveMap: bt.emissive, emissiveIntensity: 0 }))
+    const glassMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true, map: wt.map, emissive: 0xffffff, emissiveMap: wt.emissive, emissiveIntensity: 0 }), false)
+    const brickMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true, map: bt.map, emissive: 0xffffff, emissiveMap: bt.emissive, emissiveIntensity: 0 }), false)
     this.winMats = [glassMat, brickMat]
     const prop = bend(new THREE.MeshLambertMaterial({ vertexColors: true }))
     const glow = bend(new THREE.MeshBasicMaterial({ vertexColors: true }))
@@ -383,9 +386,9 @@ export class World {
         const rel = dist - it.d + it.drift * (time - c.t0)
         if (it.v === 'ferris') { if (rel > -farLim - 30 && rel < 40) ferrisItem = it; continue }
         const v = this.variants.get(it.v)!, ext = v.def.ext ?? 10
-        const z = rel
-        if (z - ext > 14 || z + ext < -farLim) continue
-        this.write(v, it, z)
+        const z = rel, tower = it.v.startsWith('tower') || it.v === 'spire'
+        if (z - ext > 14 || z + ext < -(tower ? farLim - 90 : farLim)) continue
+        this.write(v, it, z, tower)
         if (v.def.also) { const a = this.variants.get(v.def.also)!; this.write(a, it, z) }
       }
     }
@@ -401,15 +404,17 @@ export class World {
       for (const c of f.cabins) c.rotation.z = time * 0.18
     }
   }
-  private write(v: { def: VariantDef; mesh: THREE.InstancedMesh; n: number }, it: Item, z: number) {
+  private write(v: { def: VariantDef; mesh: THREE.InstancedMesh; n: number }, it: Item, z: number, tower = false) {
     if (v.n >= v.def.cap) return
     const s = Math.sin(it.ry), c = Math.cos(it.ry)
     const zz = z
     const p = v.mesh.instanceMatrix.array as Float32Array, o = v.n * 16
     p[o] = c * it.sx; p[o + 1] = 0; p[o + 2] = -s * it.sx; p[o + 3] = 0
-    p[o + 4] = 0; p[o + 5] = it.sy; p[o + 6] = 0; p[o + 7] = 0
+    // portrait: shorter side towers and a wider street gap so the skyline shows above the canyon
+    const hk = tower ? 1 - 0.55 * this.portrait : 1, xk = tower && Math.abs(it.x) < 60 ? 1 + 0.6 * this.portrait : 1
+    p[o + 4] = 0; p[o + 5] = it.sy * hk; p[o + 6] = 0; p[o + 7] = 0
     p[o + 8] = s * it.sz; p[o + 9] = 0; p[o + 10] = c * it.sz; p[o + 11] = 0
-    p[o + 12] = it.x; p[o + 13] = it.y; p[o + 14] = zz; p[o + 15] = 1
+    p[o + 12] = it.x * xk; p[o + 13] = it.y; p[o + 14] = zz; p[o + 15] = 1
     const ca = v.mesh.instanceColor!.array as Float32Array, i3 = v.n * 3
     this.col.setHex(it.tint); ca[i3] = this.col.r; ca[i3 + 1] = this.col.g; ca[i3 + 2] = this.col.b
     v.n++

@@ -8,12 +8,12 @@ export interface PowerDef {
   css: string; hex: number
 }
 export const POWERS: Record<PowerKind, PowerDef> = {
-  wing: { id: 'wing', name: 'LEMON PEPPER WING', short: 'WING', desc: 'Speed burst. Smash through anything.', base: 6, css: '#ffd23d', hex: 0xffd23d },
-  tea: { id: 'tea', name: 'SWEET TEA', short: 'TEA', desc: 'Pulls peaches to you.', base: 10, css: '#ffb347', hex: 0xffb347 },
-  cobbler: { id: 'cobbler', name: 'PEACH COBBLER', short: 'COBBLER', desc: 'Double score while it lasts.', base: 12, css: '#ff8f6b', hex: 0xff8f6b },
-  kicks: { id: 'kicks', name: 'SUPER KICKS', short: 'KICKS', desc: 'Super jump. Hop onto trains.', base: 14, css: '#ff4d6d', hex: 0xff4d6d },
-  glide: { id: 'glide', name: 'SKYVIEW GLIDE', short: 'GLIDE', desc: 'Fly above the lanes. Peach trail.', base: 6, css: '#6fe0d0', hex: 0x6fe0d0 },
-  board: { id: 'board', name: 'BELTLINE BOARD', short: 'BOARD', desc: 'Shield. Eats one crash.', base: 18, css: '#2ec4b6', hex: 0x2ec4b6 },
+  wing: { id: 'wing', name: 'LEMON PEPPER WING', short: 'WING', desc: 'Speed burst. Smash it all.', base: 6, css: '#ffd23d', hex: 0xffd23d },
+  tea: { id: 'tea', name: 'SWEET TEA', short: 'TEA', desc: 'Peaches fly to you.', base: 10, css: '#ffb347', hex: 0xffb347 },
+  cobbler: { id: 'cobbler', name: 'PEACH COBBLER', short: 'COBBLER', desc: 'Double score.', base: 12, css: '#ff8f6b', hex: 0xff8f6b },
+  kicks: { id: 'kicks', name: 'SUPER KICKS', short: 'KICKS', desc: 'Super jump. Hop on trains.', base: 14, css: '#ff4d6d', hex: 0xff4d6d },
+  glide: { id: 'glide', name: 'SKYVIEW GLIDE', short: 'GLIDE', desc: 'Fly. Peach trail.', base: 6, css: '#6fe0d0', hex: 0x6fe0d0 },
+  board: { id: 'board', name: 'BELTLINE BOARD', short: 'BOARD', desc: 'Shield. Eats a crash.', base: 18, css: '#2ec4b6', hex: 0x2ec4b6 },
 }
 
 export const MAX_UPGRADE = 5

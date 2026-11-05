@@ -148,6 +148,7 @@ export function rampGeo() {
 /* ---------- the goose flock ---------- */
 export class GooseFlock {
   group = new THREE.Group()
+  pf = 0
   private geese: { root: THREE.Group; wl: THREE.Object3D; wr: THREE.Object3D; ph: number; ox: number; oz: number; oy: number }[] = []
   constructor() {
     const mat = (c: number) => new THREE.MeshLambertMaterial({ color: c, flatShading: true })
@@ -163,7 +164,7 @@ export class GooseFlock {
       const mkW = (s: number) => { const w = new THREE.Group(); const m = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, 0.55), grey); m.position.x = s * 0.5; w.add(m); w.position.set(s * 0.2, 0.15, 0); return w }
       const wl = mkW(-1), wr = mkW(1)
       const patch = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.07, 0.1), chin); patch.position.set(0, 0.44, -1.0)
-      r.add(body, neck, head, beak, brow, patch, tail, wl, wr); r.position.set(V[i][0] * 0.8, 0.5 + V[i][1], V[i][2] * 0.6); r.scale.setScalar(0.62)
+      r.add(body, neck, head, beak, brow, patch, tail, wl, wr); r.position.set(V[i][0] * 0.8, 0.5 + V[i][1], V[i][2] * 0.6); r.scale.setScalar(0.5)
       this.group.add(r); this.geese.push({ root: r, wl, wr, ph: i * 1.3, ox: V[i][0] * 0.8, oy: 0.5 + V[i][1], oz: V[i][2] * 0.6 })
     }
     this.group.visible = false
@@ -173,6 +174,7 @@ export class GooseFlock {
     fade.v += ((on ? 1 : 0) - fade.v) * 0.08
     this.group.visible = fade.v > 0.03
     if (!this.group.visible) return
+    this.group.scale.setScalar(1 - 0.3 * this.pf)
     const zBase = 0.4 + gap * 0.34 + (1 - fade.v) * 10
     for (const g of this.geese) {
       const f = Math.sin(time * 14 + g.ph)

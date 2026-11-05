@@ -106,10 +106,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#ffc98b;color:var(--cr
 .callout small{display:block;font:700 16px var(--mono);letter-spacing:.2em;color:var(--gold);-webkit-text-stroke:0;text-shadow:0 2px 0 var(--ink);margin-top:6px}
 .callout.go{animation:callout .95s var(--spring) both}
 @keyframes callout{0%{opacity:0;transform:translateX(-50%) scale(.3) rotate(-8deg)}18%{opacity:1;transform:translateX(-50%) scale(1.18) rotate(2deg)}30%{transform:translateX(-50%) scale(1)}78%{opacity:1}100%{opacity:0;transform:translateX(-50%) translateY(-30px) scale(.95)}}
-.district{position:absolute;right:0;top:calc(var(--sat) + 72px);background:var(--ink);color:var(--cream);padding:5px calc(var(--sar) + 14px) 5px 18px;transform:translateX(160%) skewX(-8deg);border-left:6px solid var(--coral);box-shadow:-3px 3px 0 var(--gold);text-align:right;max-width:70vw}
+.district{position:absolute;right:10px;top:calc(var(--sat) + 72px);background:var(--ink);color:var(--cream);padding:5px calc(var(--sar) + 18px) 5px 22px;white-space:nowrap;transform:translateX(160%) skewX(-8deg);border-left:6px solid var(--coral);box-shadow:-3px 3px 0 var(--gold);text-align:right;max-width:78vw}
 .district small{display:none}.district b{font:400 clamp(15px,4vw,22px) var(--display)}.district em{display:block;font:500 10px var(--mono);font-style:normal;color:var(--peach)}
 .district.go{animation:banner 3s cubic-bezier(.2,1,.3,1) both}
-@keyframes banner{0%{transform:translateX(160%) skewX(-8deg)}12%{transform:translateX(0) skewX(-8deg)}80%{transform:translateX(0) skewX(-8deg)}100%{transform:translateX(160%) skewX(-8deg)}}
+@keyframes banner{0%{transform:translateX(130%) skewX(-8deg)}8%{transform:translateX(-4px) skewX(-8deg)}80%{transform:translateX(-4px) skewX(-8deg)}100%{transform:translateX(130%) skewX(-8deg)}}
 .hint{position:absolute;left:0;right:0;bottom:calc(var(--sab) + 28px);display:flex;justify-content:center;gap:10px;flex-wrap:wrap;transition:opacity .6s}
 .hint span{background:var(--cream);color:var(--ink);border:3px solid var(--ink);padding:6px 10px;font:700 12px var(--mono);letter-spacing:.1em;box-shadow:3px 3px 0 var(--ink);animation:slide .4s var(--spring) both}
 .hint.off{opacity:0}
@@ -165,3 +165,7 @@ body.reduced *{animation-duration:.01ms!important;animation-delay:0ms!important}
 
 #l-claim{font-size:clamp(20px,6vw,30px);white-space:nowrap}
 .pw{font-size:10px;padding:2px 6px 2px 3px}.pw img{width:22px;height:22px}.powers{gap:5px}
+
+@media (max-aspect-ratio:1/1){.callout{white-space:normal;width:92vw;max-width:92vw}.callout small{font-size:11px;letter-spacing:.08em;white-space:normal;line-height:1.3}.district{right:6px}}
+#powers .panel,#scores .panel{top:calc(50% + 34px);max-height:calc(100% - 128px)}
+.hint{transition:opacity .5s}
