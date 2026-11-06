@@ -255,3 +255,23 @@ describe('tilt steering', () => {
     expect(tiltAngle(10, 40, 270)).toBe(-40); expect(tiltAngle(10, 40, -90)).toBe(-40); expect(tiltAngle(10, 40, 180)).toBe(-10)
   })
 })
+
+describe('input forgiveness', () => {
+  it('a jump pressed just before landing fires on landing, not a moment too early', () => {
+    const s = sim(); s.jump(); let t = 0
+    while (!(s.p.vy < 0 && s.p.y < 0.5) && t++ < 200) s.step(1 / 60)
+    expect(s.p.air).toBe(true); const before = s.stats.jumps; s.jump(); expect(s.stats.jumps).toBe(before)
+    run(s, 0.2); expect(s.stats.jumps).toBe(before + 1); expect(s.p.vy).not.toBe(0)
+  })
+  it('a jump pressed early in the air is not buffered forever', () => {
+    const s = sim(); s.jump(); run(s, 0.12); s.jump(); run(s, 1.2); expect(s.stats.jumps).toBe(1); expect(s.p.air).toBe(false)
+  })
+  it('a jump just after running off a train still works, but only just after', () => {
+    const edge = (late: number) => { const s = sim(); s.p.y = TRAIN_H; s.p.air = true; run(s, late); const b = s.stats.jumps; s.jump(); return s.stats.jumps - b }
+    expect(edge(0.03)).toBe(1); expect(edge(0.2)).toBe(0)
+  })
+  it('a slide pressed in the air slams down and slides on landing', () => {
+    const s = sim(); s.jump(); run(s, 0.45); const y = s.p.y; s.slide(); run(s, 0.4); expect(y).toBeGreaterThan(0)
+    expect(s.p.air).toBe(false); expect(s.p.slide).toBeGreaterThan(0)
+  })
+})

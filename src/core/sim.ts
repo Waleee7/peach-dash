@@ -9,6 +9,10 @@ export const JUMP_V = 12.6
 export const KICKS_JUMP_V = 17.4
 export const KICKS_GRAVITY = 29
 export const SLIDE_T = 0.7
+/** A jump pressed this soon before landing still fires on landing; slide likewise. */
+export const INPUT_BUFFER = 0.14
+/** A jump pressed this soon after running off an edge still counts. */
+export const COYOTE = 0.09
 export const PLAYER_H = 1.8
 export const SLIDE_H = 0.7
 export const HALF_W = 0.32
@@ -239,6 +243,7 @@ export class Sim {
   opts: Required<RunOpts>
   private crateRng: () => number
   private frame = 0
+  private jumpBuf = 0; private slideBuf = 0; private airT = 0; private jumped = false
 
   constructor(public seed: number, public perk: Perk = BASE_PERK, opts: RunOpts = {}) {
     this.opts = { ...DEFAULT_OPTS, ...opts }
@@ -275,13 +280,15 @@ export class Sim {
   right() { if (this.p.lane < 2) { this.p.lane++; this.emit('lane', 1) } }
   jump() {
     const p = this.p
-    if (p.air || this.pw.glide > 0) return
+    if (this.pw.glide > 0) return
+    if (p.air && (this.jumped || this.airT > COYOTE)) { this.jumpBuf = INPUT_BUFFER; return }
+    this.jumped = true; this.jumpBuf = 0
     p.vy = this.pw.kicks > 0 ? KICKS_JUMP_V : JUMP_V; p.air = true; p.slide = 0; this.stats.jumps++; this.emit('jump', this.pw.kicks > 0 ? 1 : 0)
   }
   slide() {
     const p = this.p
     if (this.pw.glide > 0) return
-    if (p.air) { p.vy = Math.min(p.vy, -24); return }
+    if (p.air) { p.vy = Math.min(p.vy, -24); this.slideBuf = INPUT_BUFFER * 2; this.jumpBuf = 0; return }
     if (p.slide <= 0) { this.stats.slides++; this.emit('slide') }
     p.slide = SLIDE_T
   }
@@ -367,6 +374,9 @@ export class Sim {
     // player horizontal
     p.x += (laneX(p.lane) - p.x) * (1 - Math.exp(-h * this.perk.laneRate))
     if (p.slide > 0) p.slide -= h
+    if (this.jumpBuf > 0) this.jumpBuf -= h
+    if (this.slideBuf > 0) this.slideBuf -= h
+    this.airT = p.air ? this.airT + h : 0
     // vertical: glide hovers; otherwise gravity against the highest surface underfoot
     if (this.pw.glide > 0) {
       p.air = true; p.vy = 0; p.y += (GLIDE_ALT - p.y) * (1 - Math.exp(-h * 2.4))
@@ -378,7 +388,8 @@ export class Sim {
       }
       if (p.air) {
         p.vy -= (this.pw.kicks > 0 ? (p.vy < 0 ? KICKS_GRAVITY * 2.1 : KICKS_GRAVITY) : GRAVITY) * h; p.y += p.vy * h
-        if (p.vy <= 0 && p.y <= f) { const hard = -p.vy; p.y = f; p.vy = 0; p.air = false; this.emit('land', hard) }
+        if (p.vy <= 0 && p.y <= f) { const hard = -p.vy; p.y = f; p.vy = 0; p.air = false; this.jumped = false; this.emit('land', hard)
+          if (this.jumpBuf > 0) this.jump(); else if (this.slideBuf > 0) { this.slideBuf = 0; this.slide() } }
       }
     }
     if (this.onTrain) { this.trainTime += h; this.stats.trainDist += this.speed * h }

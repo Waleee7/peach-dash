@@ -19,6 +19,8 @@ const giveBadges = (p, n) => p.evaluate(n => { const s = __peach.sim; s.invincib
   check('peach icon resolves through the built css', /art\/badge-peach/.test(st.pdot))
   check('autopilot keeps running', st.dist > 250, `${Math.floor(st.dist)} m`)
   check('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '))
+  const held = await p.evaluate(() => { const g = __peach; g.botOn = false; g.sim.invincible = true; g.sim.chase.on = false; g.sim.track.obstacles = []; g.sim.p.lane = 1; const key = r => dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', repeat: r })); key(false); key(true); key(true); const l = g.sim.p.lane; g.sim.p.lane = 2; key(false); return [l, g.sim.p.lane] })
+  check('a held arrow key is one move', held[0] === 0 && held[1] === 1)
 }
 { // phone: tilt steering, vibration patterns, badge set -> boost
   const c = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
@@ -36,6 +38,11 @@ const giveBadges = (p, n) => p.evaluate(n => { const s = __peach.sim; s.invincib
   check('holding the lean does not repeat', await p.evaluate(() => __peach.sim.p.lane) === 2)
   await orient(p, 0); await orient(p, -26)
   check('recentre then lean left changes lane back', await p.evaluate(() => __peach.sim.p.lane) === 1)
+  const swipe = (dx, dy) => p.evaluate(([dx, dy]) => { const a = document.getElementById('app'), ev = (t, x, y) => a.dispatchEvent(new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, pointerId: 1 })); ev('pointerdown', 200, 500); ev('pointermove', 200 + dx, 500 + dy); dispatchEvent(new PointerEvent('pointerup')); const s = __peach.sim; return { lane: s.p.lane, air: s.p.air } }, [dx, dy])
+  check('a short swipe changes lane instantly', (await swipe(-20, 0)).lane === 0)
+  check('a tiny finger wobble is ignored', (await swipe(6, 3)).lane === 0)
+  check('a short swipe up jumps instantly', (await swipe(0, -20)).air === true)
+  await p.waitForTimeout(900); await swipe(20, 0)
   await p.evaluate(() => { window.__v.length = 0 }); await giveBadges(p, 5); await p.waitForTimeout(1500)
   const st = await p.evaluate(() => ({ sets: __peach.sim.stats.sets, boost: __peach.sim.badgeBoost, v: window.__v, on: document.getElementById('h-boost').classList.contains('on'), filled: document.querySelectorAll('#h-badges img.f').length }))
   check('five badges complete a set and start the boost', st.sets === 1 && st.boost > 0 && st.on, `boost ${st.boost.toFixed(1)}s`)

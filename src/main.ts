@@ -35,7 +35,7 @@ class Game {
   idx = 0; committed: RunStats = {}; lastDistrict = -1; botT = 0
   geese!: GooseFlock; pfx!: PlayerFx; gooseFade = { v: 0 }; runEntry: BoardEntry | null = null; honkT = 3
   today = dateKey()
-  tilt = freshTilt(); setsDone = 0
+  tilt = freshTilt(); setsDone = 0; prLimit = 2; slowFrames = 0; hudT = 0
   private flash = $('flash'); private callEl = $('h-callout'); private distEl = $('h-district')
   private cache = new Map<string, string>()
 
@@ -53,7 +53,9 @@ class Game {
     try { await Promise.race([document.fonts.load('40px Bungee'), new Promise(r => setTimeout(r, 1200))]) } catch { /* ignore */ }
     this.atm.backdrop.loadWallpaper(this.save.settings.quality === 'low', import.meta.env.BASE_URL)
     this.world = new World(this.scene, this.save.settings.quality === 'low')
-    this.ent = new Entities(this.scene)
+    this.ent = new Entities(this.scene); this.ent.prewarm()
+    // upload art as soon as it arrives instead of on the frame it first comes into view
+    THREE.DefaultLoadingManager.onLoad = () => this.scene.traverse(o => { const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined; if (m && !Array.isArray(m) && m.map) this.renderer.initTexture(m.map) })
     this.fx = new Particles(this.scene); this.lines = new SpeedLines(this.scene)
     this.geese = new GooseFlock(); this.scene.add(this.geese.group); this.pfx = new PlayerFx(this.scene, o => this.fx.emit(o))
     for (const c of CHARACTERS) this.runners.set(c.id, new Runner(c.id))
@@ -67,6 +69,7 @@ class Game {
     if (qs.get('char')) { this.idx = Number(qs.get('char')); this.showRunner(CHARACTERS[this.idx].id); this.renderRunnerCard() }
     if (scr === 'play') { this.botOn = qs.get('bot') === '1'; this.startRun(Number(qs.get('at')) || 0) }
     else if (scr === 'title' && qs.get('login') !== '0' && loginStatus(this.save.login, this.today).pending) this.showLogin()
+    this.renderer.compile(this.scene, this.camera)
     this.last = performance.now(); requestAnimationFrame(t => this.frame(t))
     ;(window as unknown as { __peach: Game }).__peach = this
   }
@@ -76,7 +79,7 @@ class Game {
     const s = this.save.settings
     this.sound.sfxOn = s.sfx; this.sound.musicOn = s.music; Haptics.on = s.haptics
     document.body.classList.toggle('reduced', s.reduced)
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, s.quality === 'low' ? 1.1 : 2))
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, s.quality === 'low' ? 1.1 : 2, this.prLimit))
     if (this.world) this.world.lowQuality = s.quality === 'low'
     this.resize()
   }
@@ -410,6 +413,7 @@ class Game {
     addEventListener('keydown', e => {
       this.sound.unlock()
       const k = e.key.toLowerCase()
+      if (e.repeat && ['arrowleft', 'a', 'arrowright', 'd', 'arrowup', 'w', ' ', 'arrowdown', 's'].includes(k)) return   // a held key is one move
       if (['arrowleft', 'a'].includes(k)) act('l')
       else if (['arrowright', 'd'].includes(k)) act('r')
       else if (['arrowup', 'w', ' '].includes(k)) { act('u'); if (this.mode === 'title' && k === ' ') this.act('play') }
@@ -424,7 +428,7 @@ class Game {
     app.addEventListener('pointermove', e => {
       if (!on) return
       const dx = e.clientX - sx, dy = e.clientY - sy
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return
       if (Math.abs(dx) > Math.abs(dy)) act(dx < 0 ? 'l' : 'r'); else act(dy < 0 ? 'u' : 'd')
       sx = e.clientX; sy = e.clientY
     })
@@ -440,7 +444,8 @@ class Game {
   setText(id: string, v: string) { if (this.cache.get(id) !== v) { this.cache.set(id, v); $(id).textContent = v } }
   hud() {
     const s = this.sim
-    this.setText('h-score', Math.floor(s.score).toLocaleString()); this.setText('h-dist', String(Math.floor(s.dist)))
+    // text changes force layout, so the fast-moving counters update 15 times a second rather than every frame
+    if (this.clock - this.hudT > 1 / 15 || s.state !== 'run') { this.hudT = this.clock; this.setText('h-score', Math.floor(s.score).toLocaleString()); this.setText('h-dist', String(Math.floor(s.dist))) }
     this.setText('h-peaches', String(Math.floor(s.peaches)))
     const bk = `${s.badgeIdx}:${s.stats.sets}`
     if (this.cache.get('badges') !== bk) {
@@ -485,6 +490,9 @@ class Game {
     requestAnimationFrame(t => this.frame(t))
     const real = Math.max(0, Math.min(0.05, (now - this.last) / 1000)); this.last = now; this.clock += real
     const s = this.sim, reduced = this.save.settings.reduced
+    // sustained slow frames: trade a little sharpness for a steady frame rate, one step at a time
+    this.slowFrames = real > 1 / 42 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 0.25)
+    if (this.slowFrames > 45 && this.prLimit > 1) { this.slowFrames = 0; this.prLimit = Math.max(1, Math.min(this.prLimit, devicePixelRatio || 1) - 0.25); this.applySettings() }
     let ts = 1
     if (this.hitStop > 0) { this.hitStop -= real; ts = 0 }
     const live = this.mode === 'play' || (this.attract && ['title', 'runners', 'settings', 'powers', 'scores', 'login'].includes(this.mode))
@@ -517,7 +525,7 @@ class Game {
     if (running && ts > 0 && !p.air && Math.random() < 0.35) this.fx.emit({ x: p.x + (Math.random() - 0.5) * 0.4, y: 0.08, z: 0.2, n: 1, colors: [0xfff1d6, 0xe8c9a0], speed: 1, up: 0.8, size: 0.14, life: 0.4, grav: 2, vz: 2 })
     // world
     this.world.portrait = this.portrait; this.geese.pf = this.portrait
-    this.atm.update(s.dist, this.clock, this.camera.position, this.world.winMats, dt)
+    this.atm.update(s.dist, this.clock, this.camera.position, dt)
     bendU.uCurve.value = Math.sin(s.dist / 520) * 0.00035 * (reduced ? 0.4 : 1)
     this.world.update(s.dist, this.clock)
     this.ent.update(s, this.clock)

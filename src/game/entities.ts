@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { GeoBuilder, bend, glowTexture, haloTexture } from './gfx'
 import { BADGES, LANE_W, LETTERS, SPAWN_AHEAD, laneX, type Obstacle, type Sim } from '../core/sim'
-import { POWERS, type PowerKind } from '../core/powers'
+import { POWERS, POWER_KINDS, type PowerKind } from '../core/powers'
 import { pickupGeo, PICKUP_SCALE, scooterGeo, barricadeGeo, lowSignGeo, carGeo, trainGeo, rampGeo, busGeo } from './models'
 
 const TRUCK_COLORS = [0xff7a66, 0x3fe0d0, 0xffd23d]
@@ -102,6 +102,16 @@ export class Entities {
     }
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, fog: false }))
     this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = 0.04; this.shadow.renderOrder = 1; scene.add(this.shadow)
+  }
+  /** Build everything the course can throw at the player up front, so first sightings never hitch mid-run. */
+  prewarm() {
+    const obs = [{ kind: 'barrier' }, { kind: 'cones' }, { kind: 'scooter' }, { kind: 'bus' }, { kind: 'ramp' }, ...[0, 1, 2].flatMap(variant => [{ kind: 'truck', variant }, { kind: 'car', variant }]), ...[1, 2, 3].flatMap(span => [{ kind: 'sign', span }, { kind: 'lowsign', span }, { kind: 'barricade', span }]), ...[2, 3].map(c => ({ kind: 'train', len: c * 14.8 }))]
+    for (const o of obs) this.geo({ variant: 0, span: 1, len: 1, ...o } as Obstacle)
+    const pick = (key: string, m: THREE.Mesh) => { m.frustumCulled = false; m.visible = false; this.scene.add(m); this.picks.set(key, { meshes: [m], used: 0 }) }
+    for (const k of POWER_KINDS) pick(k, new THREE.Mesh(pickupGeo(k, 'A'), this.pickMat))
+    pick('crate', new THREE.Mesh(pickupGeo('crate', 'A'), this.pickMat))
+    for (const ch of new Set(LETTERS)) pick('letter' + ch, new THREE.Mesh(pickupGeo('letter', ch), this.pickMat))
+    for (const n of BADGES) { const m = new THREE.Mesh(this.badgeGeo, this.badgeMats.get(n)!); m.renderOrder = 5; pick('badge' + n, m) }
   }
   private geo(o: Obstacle) {
     const key = o.kind === 'truck' || o.kind === 'car' ? o.kind + (o.variant % 3) : o.kind === 'sign' || o.kind === 'lowsign' || o.kind === 'barricade' ? o.kind + o.span : o.kind === 'train' ? 'train' + Math.round(o.len / 14.8) : o.kind

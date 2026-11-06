@@ -280,6 +280,7 @@ void main(){
   // mirrored wrap: the painting reflects at its sides, which keeps the join continuous all the way around
   float u = 0.5 + (vUv.x - 0.5) * uRepeat, y = uBottom + vUv.y * uTall;   // y: image-heights above the street horizon
   vec3 col = mix(texture2D(tA, vec2(u, y + uV0.x)).rgb, texture2D(tB, vec2(u, y + uV0.y)).rgb, uMix);
+  col *= 1.0 - 0.32 * uMix;                                               // deepen the night painting so it clearly differs from dusk
   col = mix(col, uHaze, 1.0 - smoothstep(-0.05, 0.012, y));               // the foot of the painting melts into the road fog
   col = mix(col, uTop, smoothstep(0.6, 0.72, y));                         // and its top into the sky dome
   gl_FragColor = vec4(col * uReady, uReady);

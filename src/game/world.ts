@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { GeoBuilder, bend, bendU, windowTextures, muralTexture, groundTexture, type GroundKind } from './gfx'
+import { GeoBuilder, bend, bendU, groundTexture, type GroundKind } from './gfx'
+import { BUILDING_ATLAS } from './buildingAtlas'
 import { mulberry32 } from '../core/rng'
 import { SkylineBackdrop } from './skyline'
 
@@ -21,7 +22,7 @@ const CAPX = 1.9
 /* ---------------- atmosphere: neon dusk -> night -> dusk, keyed to the wallpapers ---------------- */
 interface Key { t: number; top: string; hor: string; sun: string; sunH: number; hemiS: string; hemiG: string; hemiI: number; dir: string; dirI: number; win: number; stars: number; sk: [number, number, number] }
 const DUSK = { top: '#1c0d63', hor: '#3b1b73', sun: '#000000', sunH: -0.4, hemiS: '#ffc4ec', hemiG: '#7d5aa8', hemiI: 1.05, dir: '#ffb490', dirI: 1.25, win: 0.65, stars: 0.15, sk: [0, 1, 0] as [number, number, number] }
-const NIGHT = { top: '#120c4c', hor: '#1c1856', sun: '#000000', sunH: -0.4, hemiS: '#a8b6ff', hemiG: '#5f4f9c', hemiI: 1.0, dir: '#b8c4ff', dirI: 0.85, win: 1, stars: 1, sk: [0, 0, 1] as [number, number, number] }
+const NIGHT = { top: '#0a0736', hor: '#120f40', sun: '#000000', sunH: -0.4, hemiS: '#a8b6ff', hemiG: '#5f4f9c', hemiI: 0.85, dir: '#b8c4ff', dirI: 0.7, win: 1, stars: 1, sk: [0, 0, 1] as [number, number, number] }
 const KEYS: Key[] = [{ t: 0, ...DUSK }, { t: 0.3, ...DUSK }, { t: 0.46, ...NIGHT }, { t: 0.76, ...NIGHT }, { t: 0.92, ...DUSK }, { t: 1, ...DUSK }]
 const SKY_VS = `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }`
 const SKY_FS = `varying vec3 vDir; uniform vec3 uTop; uniform vec3 uHor; uniform vec3 uSun; uniform float uSunH; uniform float uStars; uniform float uTime;
@@ -39,7 +40,6 @@ void main(){
 }`
 export class Atmosphere {
   sky: THREE.Mesh; hemi: THREE.HemisphereLight; dir: THREE.DirectionalLight; ground: THREE.Mesh
-  night = 0
   backdrop: SkylineBackdrop
   private u = { uTop: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uSun: { value: new THREE.Color() }, uSunH: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 } }
   private ca = new THREE.Color(); private cb = new THREE.Color()
@@ -56,7 +56,7 @@ export class Atmosphere {
     scene.add(this.sky, this.hemi, this.dir, this.dir.target, this.ground)
   }
   private mix(a: string, b: string, f: number, out: THREE.Color) { return out.set(a).lerp(this.cb.set(b), f) }
-  update(dist: number, time: number, camPos: THREE.Vector3, winMats: THREE.MeshLambertMaterial[], dt = 0.016) {
+  update(dist: number, time: number, camPos: THREE.Vector3, dt = 0.016) {
     const t = ((dist % (DISTRICT_LEN * 3)) / (DISTRICT_LEN * 3)) % 1
     let i = 0; while (i < KEYS.length - 2 && t > KEYS[i + 1].t) i++
     const a = KEYS[i], b = KEYS[i + 1], f = (t - a.t) / (b.t - a.t), sf = f * f * (3 - 2 * f)
@@ -65,11 +65,9 @@ export class Atmosphere {
     this.u.uSunH.value = L(a.sunH, b.sunH); this.u.uStars.value = L(a.stars, b.stars); this.u.uTime.value = time
     this.mix(a.hemiS, b.hemiS, sf, this.hemi.color); this.mix(a.hemiG, b.hemiG, sf, this.hemi.groundColor); this.hemi.intensity = L(a.hemiI, b.hemiI)
     this.mix(a.dir, b.dir, sf, this.dir.color); this.dir.intensity = L(a.dirI, b.dirI)
-    this.night = L(a.win, b.win)
     this.u.uHor.value.lerp(this.u.uSun.value, 0.1)
     const fog = this.scene.fog as THREE.Fog; fog.color.copy(this.u.uHor.value)
     ;(this.ground.material as THREE.MeshBasicMaterial).color.copy(fog.color)
-    for (const m of winMats) m.emissiveIntensity = this.night * 1.0
     const sk = a.sk.map((v, n) => v + (b.sk[n] - v) * sf) as [number, number, number]
     this.backdrop.update(sk, fog.color, this.u.uTop.value, camPos, Math.sin(dist / 520) * 0.1, time, dt)
     this.sky.position.copy(camPos); this.ground.position.x = camPos.x; this.ground.position.z = camPos.z
@@ -82,41 +80,8 @@ interface Item { v: string; x: number; y: number; d: number; ry: number; sx: num
 interface Chunk { idx: number; district: number; items: Item[]; ground: THREE.Mesh; t0: number }
 
 const G = { gold: 0xf3b83a, cream: 0xf1e4c8, brick: 0xb5533c, green: 0x5f9f48, dkgreen: 0x3f7f3a, trunk: 0x7a4b2e, peach: 0xff8f6b, steel: 0x9fb3c8 }
-const TINTS = [0x6d5cae, 0x5c50a0, 0x7f5ba8, 0x5068b4, 0x8c5aa0, 0x5a6cac, 0x7160b8]
-const NEON = [0x27e6ff, 0xff5ec4, 0x9a5cff, 0xffb347]
+const TINTS = [0xffffff, 0xf2eaff, 0xe6dcff, 0xffeaf6, 0xdfe6ff]
 
-function towerGeo(kind: number, w: number, h: number, d: number) {
-  const b = new GeoBuilder(), off = (kind * 0.25) % 1
-  b.box(w, h, d, 0, 0, 0, 0xffffff, { win: true, off })
-  if (kind === 0) { b.box(w * 0.7, 3, d * 0.7, 0, h, 0, 0xffffff, { win: true }); b.cyl(0.15, 0.25, 12, 0, h + 3, 0, 0xdddddd, 5) }
-  if (kind === 1) { b.box(w * 0.75, h * 0.18, d * 0.75, 0, h, 0, 0xffffff, { win: true, off }); b.box(w * 0.45, h * 0.12, d * 0.45, 0, h * 1.18, 0, 0xffe9b0, { win: true }); b.cone(w * 0.25, h * 0.2, 0, h * 1.3, 0, G.gold, 4, Math.PI / 4) }
-  if (kind === 2) { b.wedge(w, h * 0.16, d, 0, h, 0, 0xffffff); b.box(w, 1.4, d * 0.2, 0, h + h * 0.16, -d * 0.4, 0xffffff) }
-  if (kind === 3) { b.cone(w * 0.72, h * 0.22, 0, h, 0, 0xfff1e0, 4, Math.PI / 4); b.box(w * 0.2, h * 0.08, d * 0.2, 0, h + h * 0.22, 0, G.gold) }
-  return b.build()
-}
-/** Lit trim along a tower's roofline and corners, the outlined look of the wallpapers. */
-function towerNeonGeo(w: number, h: number, d: number, color: number) {
-  const b = new GeoBuilder(), t = 0.3
-  for (const s of [-1, 1]) { b.box(w + t, t, t, 0, h, s * d / 2, color); b.box(t, t, d + t, s * w / 2, h, 0, color); for (const q of [-1, 1]) b.box(t, h, t, s * w / 2, 0, q * d / 2, color) }
-  return b.build()
-}
-function spireGeo() {
-  const b = new GeoBuilder()
-  b.box(15, 100, 15, 0, 0, 0, 0xbcc9d6, { win: true })
-  b.box(11, 26, 11, 0, 100, 0, 0xbcc9d6, { win: true })
-  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) b.box(1.2, 126, 1.2, sx * 7.5, 0, sz * 7.5, G.gold)
-  // gold lattice on the crown
-  for (let f = 0; f < 4; f++) {
-    const ry = (f * Math.PI) / 2
-    for (let i = 0; i < 4; i++) {
-      const a = Math.sin(ry), c = Math.cos(ry), y = 102 + i * 6
-      b.box(0.5, 6, 0.5, a * 5.8 + c * 3, y, c * 5.8 - a * 3, G.gold)
-      b.box(8.5, 0.5, 0.5, a * 5.8, y, c * 5.8, G.gold, { ry })
-    }
-  }
-  b.box(7, 3, 7, 0, 126, 0, G.gold); b.cone(4.2, 34, 0, 129, 0, G.gold, 4, Math.PI / 4); b.cone(1, 14, 0, 160, 0, G.gold, 4)
-  return b.build()
-}
 function capitolGeo() {
   const b = new GeoBuilder()
   b.box(30, 8, 15, 0, 0, 0, G.cream); b.box(34, 2, 17, 0, 8, 0, 0xe8d6b2)
@@ -144,67 +109,30 @@ function foxGeo() {
   glow.box(9, 0.9, 0.3, 0, 8.2, 8.9, 0xff5e5b); glow.box(9, 0.5, 0.3, 0, 9.4, 8.9, 0xffd166)
   return [b.build(), glow.build()] as const
 }
-function warehouseGeo() {
-  const b = new GeoBuilder(), glow = new GeoBuilder()
-  b.box(15, 17, 40, 0, 0, 0, G.brick, { win: true }); b.box(15.6, 1.2, 40.6, 0, 17, 0, 0x8a3e2e)
-  b.box(9, 36, 9, 0, 0, -12, 0xa84a35, { win: true }); b.box(10, 1.5, 10, 0, 36, -12, 0x8a3e2e); b.cone(6, 6, 0, 37.5, -12, 0x4f7a6a, 4, Math.PI / 4)
-  b.cyl(2.2, 2.2, 3.5, 4, 18.2, 12, G.trunk, 8); b.cone(2.5, 1.8, 4, 21.7, 12, 0x6b4a3a, 8)
-  glow.cyl(2.4, 2.4, 0.4, 0, 28, -7.4, 0xfff1b0, 12, [Math.PI / 2, 0, 0])
-  for (let i = 0; i < 5; i++) glow.box(1.6, 3, 0.4, -5 + i * 2.5, 18.6, 18, [0xff5e5b, 0xffd166, 0x2ec4b6, 0xff8f6b, 0xfff1d6][i])
-  return [b.build(), glow.build()] as const
-}
-const loftGeo = () => new GeoBuilder().box(13, 11, 20, 0, 0, 0, 0xc2603f, { win: true }).box(13.6, 0.9, 20.6, 0, 11, 0, 0x8a3e2e).box(4, 3, 5, 3, 11.9, 3, 0x6b6b72).build()
 function lampGeo() {
   const b = new GeoBuilder(), g = new GeoBuilder()
   b.cyl(0.1, 0.16, 5.6, 0, 0, 0, 0x4a3f55, 6); b.box(1.5, 0.12, 0.12, 0.7, 5.5, 0, 0x4a3f55)
-  g.ball(0.34, 1.45, 5.35, 0, 0xfff0b8, 1, 0.7, 1, 1)
+  g.ball(0.2, 1.45, 5.35, 0, 0xffa45c, 1, 0.7, 1, 1)
   return [b.build(), g.build()] as const
 }
-function treeGeo() {
-  const b = new GeoBuilder()
-  b.cyl(0.18, 0.28, 2.6, 0, 0, 0, G.trunk, 6)
-  b.ball(1.7, 0, 3.6, 0, G.green, 1, 0.9, 1); b.ball(1.2, 1.1, 3.1, 0.4, 0x7ab552); b.ball(1.2, -0.9, 3.0, -0.5, 0x4f8f3d)
-  return b.build()
-}
-function peachTreeGeo() {
-  const b = new GeoBuilder()
-  b.cyl(0.15, 0.26, 1.7, 0, 0, 0, G.trunk, 6)
-  b.ball(1.5, 0, 2.5, 0, 0x6fb04a, 1, 0.85, 1); b.ball(1.05, 1, 2.2, 0.4, 0x82c35a); b.ball(1.0, -0.9, 2.1, -0.4, 0x5aa03e)
-  const dots: [number, number, number][] = [[0.9, 2.4, 1.1], [-1, 2.8, 0.9], [0.2, 3.2, -1.1], [1.5, 2.1, -0.4], [-0.5, 1.8, 1.3], [-1.4, 2.2, -0.6], [0.6, 3.0, 1.0]]
-  dots.forEach(([x, y, z], i) => b.ball(0.26, x, y, z, i % 2 ? 0xff8f6b : 0xffb08c, 1, 1, 1, 1))
-  return b.build()
-}
-function kudzuPoleGeo() {
-  const b = new GeoBuilder(); b.cyl(0.16, 0.22, 7.5, 0, 0, 0, 0x6b5a50, 6)
-  for (let i = 0; i < 6; i++) b.ball(0.9 - i * 0.07, Math.sin(i * 2) * 0.35, 0.8 + i * 1.05, Math.cos(i * 2) * 0.3, i % 2 ? 0x3f7f3a : 0x558f43, 1, 1.2, 1)
-  b.ball(1.1, 0.7, 7.2, 0, 0x4a8a3c, 1.6, 0.7, 1); b.ball(0.5, 1.6, 6.2, 0.2, 0x3f7f3a, 1, 1.5, 1)
-  return b.build()
-}
-function kudzuMoundGeo() {
-  const b = new GeoBuilder()
-  for (let i = 0; i < 9; i++) { const a = i * 2.4; b.ball(1.6 + (i % 3) * 0.4, Math.cos(a) * 2.2, 1.2 + (i % 4) * 0.5, Math.sin(a) * 2.2, i % 2 ? 0x3f7f3a : 0x5a9a46, 1, 0.9, 1) }
-  b.ball(2.6, 0, 2.2, 0, 0x4a8a3c)
-  return b.build()
-}
-const hillGeo = () => new GeoBuilder().ball(1, 0, 0, 0, 0x86bd5c, 1, 1, 1, 2).build()
-const clayGeo = () => new GeoBuilder().ball(1, 0, 0, 0, 0xb85a3a, 1.4, 0.6, 1, 1).build()
+const hillGeo = () => new GeoBuilder().ball(1, 0, 0, 0, 0x2b5d6e, 1, 1, 1, 2).build()
 function strPoleGeo() { return new GeoBuilder().cyl(0.09, 0.13, 5.6, 0, 0, 0, 0x4a3f55, 6).build() }
 function strWireGeo() {
   const g = new GeoBuilder()
-  for (let i = 0; i < 9; i++) { const u = i / 8, z = u * 13, y = 5.4 - Math.sin(u * Math.PI) * 0.7; g.ball(0.17, 0, y, z, [0xffe066, 0xffb347, 0xfff1d6][i % 3], 1, 1, 1, 0); if (i) g.box(0.03, 0.03, 1.7, 0, y + 0.1, z - 0.8, 0x302030) }
+  for (let i = 0; i < 9; i++) { const u = i / 8, z = u * 13, y = 5.4 - Math.sin(u * Math.PI) * 0.7; g.ball(0.075, 0, y, z, [0xff5ec4, 0xffb347, 0x27e6ff][i % 3], 1, 1, 1, 0); if (i) g.box(0.03, 0.03, 1.7, 0, y + 0.1, z - 0.8, 0x302030) }
   return g.build()
 }
 function crossGeo() {
   const g = new GeoBuilder()
-  for (let i = 0; i < 15; i++) { const u = i / 14, x = -6.4 + u * 12.8, y = 8.2 - Math.sin(u * Math.PI) * 1.2; g.ball(0.2, x, y, 0, [0xffe066, 0xff8f6b, 0xfff1d6][i % 3], 1, 1, 1, 0); if (i) g.box(0.9, 0.03, 0.03, x - 0.45, y + 0.1, 0, 0x302030) }
+  for (let i = 0; i < 15; i++) { const u = i / 14, x = -6.4 + u * 12.8, y = 8.2 - Math.sin(u * Math.PI) * 1.2; g.ball(0.08, x, y, 0, [0xffe066, 0xff8f6b, 0xfff1d6][i % 3], 1, 1, 1, 0); if (i) g.box(0.9, 0.03, 0.03, x - 0.45, y + 0.1, 0, 0x302030) }
   return g.build()
 }
 const crossPoleGeo = () => new GeoBuilder().cyl(0.12, 0.16, 8.4, 0, 0, 0, 0x4a3f55, 6).build()
 const wallGeo = () => new GeoBuilder().box(1, 1, 1, 0, 0, 0, 0xffffff).build()
 function muralPlane() { const g = new THREE.PlaneGeometry(1, 1); g.translate(0, 0.5, 0); return g }
 function railGeo() {
-  const b = new GeoBuilder(); b.box(5.6, 0.9, 40, 0, 7.6, 0, 0xd9cdb8); b.box(0.3, 0.8, 40, -2.6, 8.5, 0, 0xb8a98f); b.box(0.3, 0.8, 40, 2.6, 8.5, 0, 0xb8a98f)
-  for (const z of [-15, 0, 15]) b.box(1.6, 7.6, 1.6, 0, 0, z, 0xcbbfa8)
+  const b = new GeoBuilder(); b.box(5.6, 0.9, 40, 0, 7.6, 0, 0x5d5688); b.box(0.3, 0.8, 40, -2.6, 8.5, 0, 0xff5ec4); b.box(0.3, 0.8, 40, 2.6, 8.5, 0, 0x27e6ff)
+  for (const z of [-15, 0, 15]) b.box(1.6, 7.6, 1.6, 0, 0, z, 0x4b4576)
   return b.build()
 }
 function railcarGeo() {
@@ -248,6 +176,22 @@ function buildFerris(mats: { prop: THREE.Material; glow: THREE.Material }): Ferr
   return { group, wheel, cabins }
 }
 
+/** How far the building cards turn from facing the camera toward facing the road. */
+const TOE = 0.72
+const TREE_H = 7.5, PLAIN_TREES = [0, 2, 4, 5], PEACH_TREES = [1, 3]
+const BUILDING_ASPECT: Record<string, number> = {}
+const BUILDING_KEYS = { towers: [] as string[], midrise: [] as string[], lofts: [] as string[] }
+for (const [sheet, a] of Object.entries(BUILDING_ATLAS)) if (sheet !== 'trees') a.items.forEach((it, i) => {
+  const key = `b_${sheet}${i}`; BUILDING_ASPECT[key] = it.w / it.h
+  ;(sheet === 'towers' ? BUILDING_KEYS.towers : sheet === 'midrise' ? BUILDING_KEYS.midrise : BUILDING_KEYS.lofts).push(key)
+})
+/** Unit quad standing on its base, UV-mapped to one building in an atlas sheet. Split along its height so the world-bend stays smooth. */
+function buildingCard(sheet: string, i: number, w = 1, h = 1) {
+  const a = BUILDING_ATLAS[sheet], it = a.items[i], g = new THREE.PlaneGeometry(w, h, 1, 6); g.translate(0, h / 2, 0)
+  const uv = g.attributes.uv as THREE.BufferAttribute
+  for (let n = 0; n < uv.count; n++) uv.setXY(n, (it.x + uv.getX(n) * it.w) / a.w, 1 - (it.y + it.h) / a.h + uv.getY(n) * it.h / a.h)
+  return g
+}
 /** Unit quad standing on its base, for the sprite signs. */
 const signQuad = () => { const g = new THREE.PlaneGeometry(1, 1); g.translate(0, 0.5, 0); return g }
 function signPoleGeo() {
@@ -256,7 +200,7 @@ function signPoleGeo() {
 function billboardGeo() {
   const b = new GeoBuilder(), g = new GeoBuilder()
   for (const s of [-1, 1]) b.box(0.4, 7, 0.4, s * 3.8, 0, -0.3, 0x2a2438)
-  b.box(12.2, 6.2, 0.3, 0, 6.6, -0.3, 0x2a1f5c)
+  g.box(12.2, 6.2, 0.3, 0, 6.6, -0.3, 0x2c1d78)
   g.box(12.5, 0.18, 0.34, 0, 12.8, -0.26, 0xff5ec4); g.box(12.5, 0.18, 0.34, 0, 6.5, -0.26, 0x27e6ff)
   return [b.build(), g.build()] as const
 }
@@ -272,7 +216,6 @@ export class World {
   scene: THREE.Scene
   variants = new Map<string, { def: VariantDef; mesh: THREE.InstancedMesh; n: number }>()
   chunks = new Map<number, Chunk>()
-  winMats: THREE.MeshLambertMaterial[] = []
   groundMats: Record<GroundKind, THREE.MeshLambertMaterial>
   groundGeo = wideGround()
   ferris: FerrisRig
@@ -283,10 +226,6 @@ export class World {
 
   constructor(scene: THREE.Scene, public lowQuality = false) {
     this.scene = scene
-    const wt = windowTextures(false), bt = windowTextures(true)
-    const glassMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true, map: wt.map, emissive: 0xffffff, emissiveMap: wt.emissive, emissiveIntensity: 0 }), false)
-    const brickMat = bend(new THREE.MeshLambertMaterial({ vertexColors: true, map: bt.map, emissive: 0xffffff, emissiveMap: bt.emissive, emissiveIntensity: 0 }), false)
-    this.winMats = [glassMat, brickMat]
     const prop = bend(new THREE.MeshLambertMaterial({ vertexColors: true }))
     const glow = bend(new THREE.MeshBasicMaterial({ vertexColors: true }))
     this.groundMats = {
@@ -303,27 +242,25 @@ export class World {
       mesh.frustumCulled = false; mesh.count = 0
       scene.add(mesh); this.variants.set(k, { def, mesh, n: 0 })
     }
-    const sizes: [number, number, number][] = [[9, 34, 9], [11, 50, 10], [12, 62, 11], [10, 78, 10]]
-    const neon = bend(new THREE.MeshBasicMaterial({ vertexColors: true }), false)
-    sizes.forEach(([w, h, d], i) => { add('tower' + i, towerGeo(i, w, h, d), glassMat, 70, 8, 'towerN' + i); add('towerN' + i, towerNeonGeo(w, h, d, NEON[i]), neon, 70, 8) })
-    add('spire', spireGeo(), glassMat, 2, 14); add('capitol', capitolGeo(), prop, 2, 20)
+    const tl = new THREE.TextureLoader(), art = (f: string) => { const t = tl.load(`${import.meta.env.BASE_URL}art/${f}.webp`); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t }
+    for (const [sheet, a] of Object.entries(BUILDING_ATLAS)) {
+      const mat = bend(new THREE.MeshBasicMaterial({ map: art('bld-' + sheet), alphaTest: 0.5, side: THREE.DoubleSide }))
+      a.items.forEach((it, i) => sheet === 'trees' ? add('t_' + i, buildingCard(sheet, i, TREE_H * it.w / it.h, TREE_H), mat, 50, 5) : add(`b_${sheet}${i}`, buildingCard(sheet, i), mat, sheet === 'towers' ? 26 : 16, 16))
+    }
+    add('capitol', capitolGeo(), prop, 2, 20)
     const [fb, fg] = foxGeo(); add('fox', fb, prop, 2, 16, 'foxGlow'); add('foxGlow', fg, glow, 2)
-    const [wb, wg] = warehouseGeo(); add('warehouse', wb, brickMat, 3, 24, 'warehouseGlow'); add('warehouseGlow', wg, glow, 3)
-    add('loft', loftGeo(), brickMat, 12, 14)
     const [lb, lg] = lampGeo(); add('lamp', lb, prop, 40, 3, 'lampGlow'); add('lampGlow', lg, glow, 40)
-    add('tree', treeGeo(), prop, 60, 4); add('peachTree', peachTreeGeo(), prop, 140, 4)
-    add('kudzuPole', kudzuPoleGeo(), prop, 30, 3); add('kudzuMound', kudzuMoundGeo(), prop, 20, 6)
-    add('hill', hillGeo(), prop, 14, 50); add('clay', clayGeo(), prop, 16, 8)
+    add('hill', hillGeo(), prop, 14, 50);
     add('strPole', strPoleGeo(), prop, 80, 2); add('strWire', strWireGeo(), glow, 60, 8)
     add('cross', crossGeo(), glow, 10, 2); add('crossPole', crossPoleGeo(), prop, 20, 2)
     add('wall', wallGeo(), prop, 16, 10)
-    for (let i = 0; i < 4; i++) add('mural' + i, muralPlane(), bend(new THREE.MeshLambertMaterial({ map: muralTexture(i) })), 8, 10)
+    for (let i = 0; i < 4; i++) { const map = art('mural-' + 'ab'[i % 2]); if (i > 1) { map.wrapS = THREE.RepeatWrapping; map.repeat.x = -1 } add('mural' + i, muralPlane(), bend(new THREE.MeshBasicMaterial({ map })), 8, 10) }
     add('rail', railGeo(), prop, 8, 22)
     const [rb, rg] = railcarGeo(); add('railcar', rb, prop, 10, 8, 'railcarGlow'); add('railcarGlow', rg, glow, 10)
     const [fob, fog] = fountainGeo(); add('fountain', fob, prop, 2, 7, 'fountainGlow'); add('fountainGlow', fog, glow, 2)
-    const tl = new THREE.TextureLoader()
+    add('artsign', signQuad(), bend(new THREE.MeshBasicMaterial({ map: art('sign-peachtree'), side: THREE.DoubleSide })), 6, 8)
     for (const n of ['i285', 'atl', 'hawk', 'star', 'bulldog', 'peach', 'train', 'bus']) {
-      const map = tl.load(`${import.meta.env.BASE_URL}art/badge-${n}.webp`); map.colorSpace = THREE.SRGBColorSpace
+      const map = art('badge-' + n)
       add('art' + n, signQuad(), bend(new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide })), 6, 8)
     }
     add('signPole', signPoleGeo(), prop, 8, 2)
@@ -342,13 +279,18 @@ export class World {
   private gen(idx: number, time: number): Chunk {
     const district = Math.floor(idx / DISTRICT_CHUNKS) % 3, k = idx % DISTRICT_CHUNKS, z0 = idx * CHUNK
     const r = mulberry32(idx * 7919 + 13), items: Item[] = []
-    const put = (v: string, x: number, zz: number, o: Partial<Item> = {}) => items.push({ v, x, y: 0, d: z0 + zz, ry: 0, sx: 1, sy: 1, sz: 1, tint: 0xffffff, drift: 0, ...o })
+    const put = (v: string, x: number, zz: number, o: Partial<Item> = {}) => {
+      const isTree = v === 'tree' || v === 'peachTree'     // illustrated cards, so they always face the camera
+      items.push({ v: v === 'tree' ? 't_' + PLAIN_TREES[Math.floor(r() * PLAIN_TREES.length)] : v === 'peachTree' ? 't_' + PEACH_TREES[Math.floor(r() * PEACH_TREES.length)] : v, x, y: 0, d: z0 + zz, ry: 0, sx: 1, sy: 1, sz: 1, tint: 0xffffff, drift: 0, ...o, ...(isTree ? { ry: 0, sz: 1 } : {}) })
+    }
     const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)]
-    const skyline = (n: number, lo: number, hi: number, vars: string[]) => { for (const s of [-1, 1]) for (let i = 0; i < n; i++) { const sc = 1.5 + r() * 1.7; put(pick(vars), s * (lo + r() * (hi - lo)), r() * CHUNK, { sx: sc, sy: sc * (0.9 + r() * 0.6), sz: sc, tint: pick(TINTS) }) } }
-    const towers = ['tower0', 'tower1', 'tower2', 'tower3']
+    const skylineRow = (n: number, lo: number, hi: number) => { for (const a of [-1, 1]) for (let i = 0; i < n; i++) card(pick(farTowers), a * (lo + r() * (hi - lo)), r() * CHUNK, 75 + r() * 55, 0.2) }
+    /** One illustrated building card turned toward the road, h metres tall with its width taken from the art. */
+    const card = (v: string, x: number, zz: number, h: number, toe = TOE) => put(v, x, zz, { sx: h * BUILDING_ASPECT[v], sy: h, sz: 1, ry: x > 0 ? -toe : toe, tint: pick(TINTS) })
+    const towers = [1, 4, 5].map(i => BUILDING_KEYS.towers[i]), farTowers = [1, 2, 4, 5].map(i => BUILDING_KEYS.towers[i]), landmark = BUILDING_KEYS.towers[2], mids = [BUILDING_KEYS.midrise[2]], lofts = BUILDING_KEYS.lofts
     /** A big lit roadside billboard carrying one sprite, stretched to fit the art's own shape. */
     const bill = (s: number, zz: number, art: string, w = 5.6, h = 5.6) => {
-      const ry = s * -0.3, x = s * 15
+      const ry = s * -0.3, x = s * 19
       put('billboard', x, zz, { ry }); put('art' + art, x, zz, { ry, y: 6.9 + (5.6 - h) / 2, sx: w, sy: h, sz: 1 })
     }
     if (district === 0) {
@@ -356,11 +298,12 @@ export class World {
         put('lamp', s * 5.6, 10, { ry: s > 0 ? Math.PI : 0 }); put('lamp', s * 5.6, 30, { ry: s > 0 ? Math.PI : 0 })
         put('tree', s * 7.4, 22 + r() * 6, { sx: 0.9 + r() * 0.3, sy: 0.9 + r() * 0.3 })
         const big = (k === 3 && s > 0) || (k === 8 && s < 0) || (k === 12 && s > 0)
-        if (!big) for (let slot = 0; slot < 2; slot++) put(pick(towers), s * (19 + r() * 10), slot * 20 + 4 + r() * 10, { tint: pick(TINTS), ry: r() < 0.5 ? 0 : Math.PI, sy: 0.75 + r() * 0.4 })
+        if (!big) for (let slot = 0; slot < 2; slot++) { const x = s * (24 + r() * 9), z = slot * 20 + 4 + r() * 10; if (r() < 0.4) card(pick(mids), x, z, 26 + r() * 10); else card(pick(towers), x, z, 48 + r() * 30) }
       }
-      skyline(2, 42, 95, towers)
-      if (r() < 0.4) put('spire', (r() < 0.5 ? -1 : 1) * (60 + r() * 30), r() * CHUNK, { sx: 0.85, sy: 0.85, sz: 0.85 })
-      if (k === 3) put('spire', 34, 20, { sx: 0.7, sy: 0.7, sz: 0.7 })
+      skylineRow(2, 44, 95)
+      if (r() < 0.4) card(landmark, (r() < 0.5 ? -1 : 1) * (60 + r() * 30), r() * CHUNK, 120, 0.25)
+      if (k === 3) card(landmark, 60, 20, 110, 0.25)
+      if (k % 4 === 0) { const s = k % 8 === 0 ? -1 : 1; put('signPole', s * 8.2, 28); put('artsign', s * 8.2, 28, { y: 5.4, sx: 5.4, sy: 1.75 }) }
       if (k === 8) put('capitol', -27, 20, { ry: Math.PI / 2 })
       if (k === 12) put('fox', 17.5, 20, { ry: -Math.PI / 2 })
       if (k % 4 === 2) { const s = k % 8 === 2 ? 1 : -1; put('signPole', s * 8.2, 12); put('arti285', s * 8.2, 12, { y: 5.2, sx: 3.2, sy: 3.2 }) }
@@ -370,34 +313,29 @@ export class World {
     } else if (district === 1) {
       for (const s of [-1, 1]) {
         for (let i = 0; i < 3; i++) { put('strPole', s * 5.5, i * 13.3); put('strWire', s * 5.5, i * 13.3) }
-        if (r() < 0.55) put('kudzuPole', s * 6.6, 6 + r() * 26)
         put('tree', s * 7.4, 2 + r() * 36, { sx: 1, sy: 1 })
         const mural = k % 3 !== 2
-        if (mural) { put('wall', s * 10, 20, { sx: 0.8, sy: 6.2, sz: 20 }); put('mural' + ((k + (s > 0 ? 1 : 0)) % 4), s * 9.55, 20, { ry: s < 0 ? Math.PI / 2 : -Math.PI / 2, sx: 20, sy: 6 }) }
-        if (k === 4 && s < 0) put('warehouse', -24, 20, { ry: Math.PI / 2 })
-        else if (k === 10 && s > 0) put('warehouse', 24, 20, { ry: -Math.PI / 2 })
-        else { put('loft', s * (21 + r() * 4), 10 + r() * 6, { ry: s < 0 ? Math.PI / 2 : -Math.PI / 2 }); put('loft', s * (20 + r() * 4), 32, { ry: s < 0 ? Math.PI / 2 : -Math.PI / 2, tint: 0xffe0d0 }) }
-        put(pick(towers), s * (44 + r() * 40), r() * CHUNK, { sx: 1.8, sy: 1.8, sz: 1.8, tint: pick(TINTS) })
+        if (mural) { put('wall', s * 10, 20, { sx: 0.8, sy: 4.6, sz: 20 }); put('mural' + ((k + (s > 0 ? 1 : 0)) % 4), s * 9.55, 20, { ry: s < 0 ? Math.PI / 2 : -Math.PI / 2, sx: 20, sy: 4.4 }) }
+        card(pick(lofts), s * (21 + r() * 4), 10 + r() * 6, 11 + r() * 3); card(pick(lofts), s * (21 + r() * 4), 32, 11 + r() * 3)
+        card(pick(towers), s * (46 + r() * 40), r() * CHUNK, 70 + r() * 40, 0.25)
       }
       if (k % 4 === 1) bill(k % 8 === 1 ? 1 : -1, 26, k % 8 === 1 ? 'hawk' : 'star')
-      if (k % 4 === 3) bill(k % 8 === 3 ? -1 : 1, 26, k % 8 === 3 ? 'bulldog' : 'bus', 8, 5.4)
+      if (k % 4 === 3) bill(k % 8 === 3 ? -1 : 1, 26, k % 8 === 3 ? 'bulldog' : 'bus', k % 8 === 3 ? 5.6 : 11, k % 8 === 3 ? 5.6 : 11)
       put('cross', 0, 20); put('crossPole', -6.4, 20); put('crossPole', 6.4, 20)
-      skyline(1, 80, 120, towers)
+      skylineRow(1, 80, 120)
     } else {
       for (const s of [-1, 1]) {
-        for (let i = 0; i < 5; i++) put('peachTree', s * (7.4 + (i % 2) * 0.6), 4 + i * 8, { ry: r() * 6, sx: 1.05, sy: 1.05, sz: 1.05 })
-        for (let i = 0; i < 4; i++) { put('peachTree', s * (13 + (k % 2) * 1.5), 2 + i * 10 + (s > 0 ? 3 : 0), { ry: r() * 6 }); if (k % 2) put('peachTree', s * 19, 6 + i * 10, { ry: r() * 6 }) }
-        if (r() < 0.6) put('kudzuMound', s * (11 + r() * 3), r() * CHUNK, { sx: 1 + r() * 0.5, sy: 1 + r() * 0.4, sz: 1 + r() * 0.5 })
-        if (r() < 0.5) put('kudzuPole', s * 6.3, r() * CHUNK)
-        if (r() < 0.5) put('clay', s * 10.5, r() * CHUNK, { sx: 3 + r() * 3, sy: 1.5, sz: 3 + r() * 3, ry: r() * 3 })
+        // plain trees line the road and the fruit stays further back, so lane peaches never get lost against tree peaches
+        for (let i = 0; i < 5; i++) put('tree', s * (7.4 + (i % 2) * 0.6), 4 + i * 8, { sx: 1.05, sy: 1.05 })
+        for (let i = 0; i < 4; i++) { put('peachTree', s * (14 + (k % 2) * 1.5), 2 + i * 10 + (s > 0 ? 3 : 0), { tint: 0xb4aacc }); if (k % 2) put('peachTree', s * 20, 6 + i * 10, { tint: 0xa098c0 }) }
         put('lamp', s * 5.6, 20, { ry: s > 0 ? Math.PI : 0 })
         const hs = 28 + r() * 22; put('hill', s * (55 + r() * 40), r() * CHUNK, { sx: hs, sy: 7 + r() * 9, sz: hs, y: -2 })
       }
       if (k % 5 === 2) bill(k % 10 === 2 ? 1 : -1, 16, 'peach')
-      skyline(2, 70, 115, towers)
+      skylineRow(2, 70, 115)
       if (k === 5) put('ferris', 32, 20)
       if (k === 9) put('fountain', -14, 20)
-      if (k === 13) put('spire', 62, 20, { sx: 1.1, sy: 1.1, sz: 1.1 })
+      if (k === 13) card(landmark, 62, 20, 130, 0.25)
     }
     const ground = new THREE.Mesh(this.groundGeo, this.groundMats[DISTRICTS[district].ground])
     ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, 0); ground.frustumCulled = false
@@ -421,11 +359,12 @@ export class World {
       for (const it of c.items) {
         const rel = dist - it.d + it.drift * (time - c.t0)
         if (it.v === 'ferris') { if (rel > -farLim - 30 && rel < 40) ferrisItem = it; continue }
+        if ((it.v === 'cross' || it.v === 'strWire') && rel > -12) continue   // lights overhead would pass through the HUD
         const v = this.variants.get(it.v)!, ext = v.def.ext ?? 10
-        const z = rel, tower = it.v.startsWith('tower') || it.v === 'spire'
+        const z = rel, tower = it.v.startsWith('b_')
         if (z - ext > 14 || z + ext < -(tower ? farLim - 90 : farLim)) continue
         this.write(v, it, z, tower)
-        if (v.def.also) { const a = this.variants.get(v.def.also)!; this.write(a, it, z, tower, tower) }
+        if (v.def.also) { const a = this.variants.get(v.def.also)!; this.write(a, it, z) }
       }
     }
     for (const v of this.variants.values()) {
@@ -440,19 +379,19 @@ export class World {
       for (const c of f.cabins) c.rotation.z = time * 0.18
     }
   }
-  private write(v: { def: VariantDef; mesh: THREE.InstancedMesh; n: number }, it: Item, z: number, tower = false, white = false) {
+  private write(v: { def: VariantDef; mesh: THREE.InstancedMesh; n: number }, it: Item, z: number, tower = false) {
     if (v.n >= v.def.cap) return
     const s = Math.sin(it.ry), c = Math.cos(it.ry)
     const zz = z
     const p = v.mesh.instanceMatrix.array as Float32Array, o = v.n * 16
     p[o] = c * it.sx; p[o + 1] = 0; p[o + 2] = -s * it.sx; p[o + 3] = 0
     // keep the canyon low and wide so the wallpaper skyline stays in view, more so in portrait
-    const hk = tower ? 0.6 - 0.18 * this.portrait : 1, xk = tower && Math.abs(it.x) < 60 ? 1.3 + 0.3 * this.portrait : 1
+    const hk = tower ? 1 - 0.25 * this.portrait : 1, xk = tower && Math.abs(it.x) < 60 ? 1 + 0.3 * this.portrait : 1
     p[o + 4] = 0; p[o + 5] = it.sy * hk; p[o + 6] = 0; p[o + 7] = 0
     p[o + 8] = s * it.sz; p[o + 9] = 0; p[o + 10] = c * it.sz; p[o + 11] = 0
     p[o + 12] = it.x * xk; p[o + 13] = it.y; p[o + 14] = zz; p[o + 15] = 1
     const ca = v.mesh.instanceColor!.array as Float32Array, i3 = v.n * 3
-    this.col.setHex(white ? 0xffffff : it.tint); ca[i3] = this.col.r; ca[i3 + 1] = this.col.g; ca[i3 + 2] = this.col.b
+    this.col.setHex(it.tint); ca[i3] = this.col.r; ca[i3 + 1] = this.col.g; ca[i3 + 2] = this.col.b
     v.n++
   }
 }

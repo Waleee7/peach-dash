@@ -92,57 +92,7 @@ const tex = (c: HTMLCanvasElement, repeat = false, srgb = true) => {
 let seed = 7
 const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
 
-export function windowTextures(brick: boolean) {
-  const c = mk(256, 256), e = mk(256, 256), x = c.getContext('2d')!, y = e.getContext('2d')!
-  x.fillStyle = '#fff'; x.fillRect(0, 0, 256, 256); y.fillStyle = '#000'; y.fillRect(0, 0, 256, 256)
-  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-    const px = i * 64, py = j * 64
-    if (brick) {
-      x.fillStyle = 'rgba(120,90,80,.28)'
-      for (let r = 0; r < 8; r++) { x.fillRect(px, py + r * 8, 64, 1); for (let b = 0; b < 4; b++) x.fillRect(px + ((r % 2) * 8) + b * 16, py + r * 8, 1, 8) }
-      x.fillStyle = '#f2e2c4'; x.fillRect(px + 12, py + 6, 40, 50)
-      x.fillStyle = '#3d3040'; x.fillRect(px + 16, py + 12, 32, 44)
-      x.beginPath(); x.arc(px + 32, py + 14, 16, Math.PI, 0); x.fill()
-    } else {
-      x.fillStyle = '#d8d2cc'; x.fillRect(px, py + 54, 64, 10)
-      const g = x.createLinearGradient(0, py + 8, 0, py + 50); g.addColorStop(0, '#9fc2e8'); g.addColorStop(1, '#4d6a94')
-      x.fillStyle = g; x.fillRect(px + 7, py + 8, 50, 42)
-    }
-    if (rnd() < 0.58) {
-      y.fillStyle = rnd() < 0.2 ? '#fff4d6' : rnd() < 0.5 ? '#ffc766' : '#ffdf9c'
-      if (brick) { y.fillRect(px + 16, py + 12, 32, 44); y.beginPath(); y.arc(px + 32, py + 14, 16, Math.PI, 0); y.fill() } else y.fillRect(px + 7, py + 8, 50, 42)
-    }
-  }
-  return { map: tex(c, true), emissive: tex(e, true) }
-}
 
-export function muralTexture(kind: number) {
-  const c = mk(768, 320), x = c.getContext('2d')!
-  const bg = ['#ffb347', '#2ec4b6', '#ff6b6b', '#ffe066'][kind % 4]
-  x.fillStyle = bg; x.fillRect(0, 0, 768, 320)
-  const pal = ['#fff1d6', '#ff5e5b', '#ffd166', '#06a77d', '#3a2a4d', '#ff9f68']
-  if (kind % 4 === 0) {            // sunburst peach
-    for (let i = 0; i < 24; i++) { x.fillStyle = i % 2 ? '#ffd166' : '#ff9f68'; x.beginPath(); x.moveTo(384, 330); x.arc(384, 330, 520, (i / 24) * Math.PI * 2, ((i + 1) / 24) * Math.PI * 2); x.fill() }
-    x.fillStyle = '#ff6b6b'; x.beginPath(); x.arc(384, 170, 105, 0, 7); x.fill()
-    x.fillStyle = '#ff9f9f'; x.beginPath(); x.arc(350, 140, 40, 0, 7); x.fill()
-    x.fillStyle = '#06a77d'; x.beginPath(); x.ellipse(430, 62, 46, 20, -0.5, 0, 7); x.fill()
-    x.strokeStyle = '#3a2a4d'; x.lineWidth = 8; x.beginPath(); x.arc(384, 170, 105, 0, 7); x.stroke()
-  } else if (kind % 4 === 1) {     // geometric skyline waves
-    for (let i = 0; i < 9; i++) { x.fillStyle = pal[i % 6]; x.beginPath(); x.moveTo(0, 320); for (let u = 0; u <= 768; u += 16) x.lineTo(u, 160 + Math.sin(u / 70 + i) * 50 + i * 14); x.lineTo(768, 320); x.fill() }
-    x.fillStyle = '#fff1d6'; x.font = 'bold 120px Bungee, Impact, sans-serif'; x.textAlign = 'center'; x.fillText('404', 384, 130)
-  } else if (kind % 4 === 2) {     // flowers
-    for (let i = 0; i < 14; i++) {
-      const fx = rnd() * 768, fy = 60 + rnd() * 220, r = 22 + rnd() * 36, col = pal[Math.floor(rnd() * 5)]
-      x.fillStyle = col; for (let p = 0; p < 6; p++) { x.beginPath(); x.arc(fx + Math.cos(p) * r * 0.8, fy + Math.sin(p) * r * 0.8, r * 0.55, 0, 7); x.fill() }
-      x.fillStyle = '#3a2a4d'; x.beginPath(); x.arc(fx, fy, r * 0.35, 0, 7); x.fill()
-    }
-  } else {                         // block letters
-    x.fillStyle = '#3a2a4d'; x.font = 'bold 190px Bungee, Impact, sans-serif'; x.textAlign = 'center'; x.fillText('PEACH', 392, 230)
-    x.fillStyle = '#ff5e5b'; x.fillText('PEACH', 384, 222)
-    for (let i = 0; i < 40; i++) { x.fillStyle = pal[Math.floor(rnd() * 6)]; x.fillRect(rnd() * 768, rnd() * 320, 6, 6) }
-  }
-  return tex(c)
-}
 
 export type GroundKind = 'asphalt' | 'concrete' | 'clay'
 export function groundTexture(kind: GroundKind) {
