@@ -8,7 +8,7 @@ const uri = p => 'data:image/jpeg;base64,' + readFileSync(p).toString('base64')
 const b = await chromium.launch(), page = await b.newPage()
 const save = (name, data) => { const buf = Buffer.from(data.split(',')[1], 'base64'); writeFileSync(`public/art/${name}.webp`, buf); console.log(name, Math.round(buf.length / 1024) + 'KB') }
 const atlas = {}
-for (const sheet of ['towers', 'midrise', 'lofts', 'trees']) {
+for (const sheet of ['towers', 'midrise', 'mids2', 'lofts', 'trees']) {
   const r = await page.evaluate(async ({ u, sheet }) => {
     const i = new Image(); i.src = u; await i.decode()
     const w = i.width, h = i.height, c = document.createElement('canvas'); c.width = w; c.height = h

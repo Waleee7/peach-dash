@@ -148,6 +148,19 @@ function fountainGeo() {
   return [b.build(), g.build()] as const
 }
 
+/** Inked capsule cabin, drawn to match the illustrated scenery. */
+function gondolaTexture(color: string) {
+  const c = document.createElement('canvas'); c.width = 250; c.height = 300
+  const x = c.getContext('2d')!, ink = '#120a2c'
+  x.lineJoin = 'round'; x.strokeStyle = ink; x.lineWidth = 12
+  x.beginPath(); x.moveTo(125, 4); x.lineTo(125, 74); x.stroke()
+  const g = x.createLinearGradient(0, 70, 0, 290); g.addColorStop(0, color); g.addColorStop(1, '#1e1250')
+  x.fillStyle = g; x.beginPath(); x.roundRect(28, 68, 194, 218, 70); x.fill(); x.lineWidth = 11; x.stroke()
+  x.fillStyle = '#17103f'; x.beginPath(); x.roundRect(52, 118, 146, 78, 24); x.fill(); x.lineWidth = 8; x.stroke()
+  x.strokeStyle = color; x.lineWidth = 6; x.beginPath(); x.roundRect(62, 128, 126, 58, 16); x.stroke()
+  x.strokeStyle = '#fff1d6'; x.lineWidth = 7; x.beginPath(); x.moveTo(52, 228); x.lineTo(198, 228); x.stroke()
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t
+}
 export interface FerrisRig { group: THREE.Group; wheel: THREE.Group; cabins: THREE.Object3D[] }
 function buildFerris(mats: { prop: THREE.Material; glow: THREE.Material }): FerrisRig {
   const R = 16, H = 19, group = new THREE.Group(), wheel = new THREE.Group()
@@ -163,12 +176,10 @@ function buildFerris(mats: { prop: THREE.Material; glow: THREE.Material }): Ferr
   const lm = new THREE.Mesh(lights.build(), mats.glow)
   wheel.add(rm, lm)
   const cabins: THREE.Object3D[] = []
-  const cg = new GeoBuilder(); cg.box(1.8, 0.2, 1.6, 0, -2.1, 0, 0x3a2a4d); cg.box(1.8, 1.5, 1.6, 0, -2.0, 0, 0xffffff); cg.cone(1.3, 0.9, 0, -0.5, 0, 0xffffff, 4, Math.PI / 4); cg.cyl(0.03, 0.03, 1.6, 0, -1.6, 0, 0x555555, 4)
-  const cgeo = cg.build()
-  const cols = [0xff6b6b, 0xffd166, 0x2ec4b6, 0xff9f68, 0xf1e4c8, 0xff8fb3]
+  const cardGeo = new THREE.PlaneGeometry(2.5, 3, 1, 1); cardGeo.translate(0, -1.5, 0)
+  const cardMats = ['#ff4fbd', '#27d8ff', '#ffb02e', '#9a5cff'].map(c => bend(new THREE.MeshBasicMaterial({ map: gondolaTexture(c), alphaTest: 0.5, side: THREE.DoubleSide })))
   for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * 6.283, m = new THREE.Mesh(cgeo, new THREE.MeshLambertMaterial({ vertexColors: true, color: cols[i % 6] }))
-    bend(m.material as THREE.Material)
+    const a = (i / 12) * 6.283, m = new THREE.Mesh(cardGeo, cardMats[i % 4])
     m.position.set(Math.cos(a) * R, H + Math.sin(a) * R, 0.2); cabins.push(m); wheel.add(m)
   }
   group.add(bm, wheel)
@@ -183,7 +194,7 @@ const BUILDING_ASPECT: Record<string, number> = {}
 const BUILDING_KEYS = { towers: [] as string[], midrise: [] as string[], lofts: [] as string[] }
 for (const [sheet, a] of Object.entries(BUILDING_ATLAS)) if (sheet !== 'trees') a.items.forEach((it, i) => {
   const key = `b_${sheet}${i}`; BUILDING_ASPECT[key] = it.w / it.h
-  ;(sheet === 'towers' ? BUILDING_KEYS.towers : sheet === 'midrise' ? BUILDING_KEYS.midrise : BUILDING_KEYS.lofts).push(key)
+  ;(sheet === 'towers' ? BUILDING_KEYS.towers : sheet === 'lofts' ? BUILDING_KEYS.lofts : BUILDING_KEYS.midrise).push(key)
 })
 /** Unit quad standing on its base, UV-mapped to one building in an atlas sheet. Split along its height so the world-bend stays smooth. */
 function buildingCard(sheet: string, i: number, w = 1, h = 1) {
@@ -287,7 +298,7 @@ export class World {
     const skylineRow = (n: number, lo: number, hi: number) => { for (const a of [-1, 1]) for (let i = 0; i < n; i++) card(pick(farTowers), a * (lo + r() * (hi - lo)), r() * CHUNK, 75 + r() * 55, 0.2) }
     /** One illustrated building card turned toward the road, h metres tall with its width taken from the art. */
     const card = (v: string, x: number, zz: number, h: number, toe = TOE) => put(v, x, zz, { sx: h * BUILDING_ASPECT[v], sy: h, sz: 1, ry: x > 0 ? -toe : toe, tint: pick(TINTS) })
-    const towers = [1, 4, 5].map(i => BUILDING_KEYS.towers[i]), farTowers = [1, 2, 4, 5].map(i => BUILDING_KEYS.towers[i]), landmark = BUILDING_KEYS.towers[2], mids = [BUILDING_KEYS.midrise[2]], lofts = BUILDING_KEYS.lofts
+    const towers = [1, 4, 5].map(i => BUILDING_KEYS.towers[i]), farTowers = [1, 2, 4, 5].map(i => BUILDING_KEYS.towers[i]), landmark = BUILDING_KEYS.towers[2], mids = BUILDING_KEYS.midrise.filter(k => !/midrise[013]$/.test(k)), lofts = BUILDING_KEYS.lofts
     /** A big lit roadside billboard carrying one sprite, stretched to fit the art's own shape. */
     const bill = (s: number, zz: number, art: string, w = 5.6, h = 5.6) => {
       const ry = s * -0.3, x = s * 19
@@ -298,7 +309,7 @@ export class World {
         put('lamp', s * 5.6, 10, { ry: s > 0 ? Math.PI : 0 }); put('lamp', s * 5.6, 30, { ry: s > 0 ? Math.PI : 0 })
         put('tree', s * 7.4, 22 + r() * 6, { sx: 0.9 + r() * 0.3, sy: 0.9 + r() * 0.3 })
         const big = (k === 3 && s > 0) || (k === 8 && s < 0) || (k === 12 && s > 0)
-        if (!big) for (let slot = 0; slot < 2; slot++) { const x = s * (24 + r() * 9), z = slot * 20 + 4 + r() * 10; if (r() < 0.4) card(pick(mids), x, z, 26 + r() * 10); else card(pick(towers), x, z, 48 + r() * 30) }
+        if (!big) for (let slot = 0; slot < 2; slot++) { const x = s * (24 + r() * 9), z = slot * 20 + 4 + r() * 10; if (r() < 0.55) card(pick(mids), x, z, 26 + r() * 12); else card(pick(towers), x, z, 48 + r() * 30) }
       }
       skylineRow(2, 44, 95)
       if (r() < 0.4) card(landmark, (r() < 0.5 ? -1 : 1) * (60 + r() * 30), r() * CHUNK, 120, 0.25)
