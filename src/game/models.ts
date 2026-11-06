@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GeoBuilder } from './gfx'
-import { CAR_LEN, LANE_W, RAMP_LEN, TRAIN_H } from '../core/sim'
+import { OBS_DEF, CAR_LEN, LANE_W, RAMP_LEN, TRAIN_H } from '../core/sim'
 import type { PowerKind } from '../core/powers'
 
 /* ---------- pickups: one distinct low-poly model per power-up ---------- */
@@ -79,7 +79,7 @@ function letterGeo(ch: string) { // gold coin with a block letter
   g.forEach((row, j) => [...row].forEach((c, i) => { if (c === 'X') b.box(u, u, 0.08, (i - (w - 1) / 2) * u, (2 - j) * u, 0.1, 0x3a2a4d) }))
   return b.build()
 }
-export const PICKUP_SCALE: Record<string, number> = { wing: 1.5, tea: 1.5, cobbler: 1.35, kicks: 1.45, glide: 1.4, board: 1.5, crate: 1.5, letter: 1.5 }
+export const PICKUP_SCALE: Record<string, number> = { wing: 1.5, tea: 1.5, cobbler: 1.35, kicks: 1.45, glide: 1.4, board: 1.5, crate: 1.5, letter: 1.5, badge: 1 }
 export function pickupGeo(kind: PowerKind | 'crate' | 'letter', ch = 'A') {
   switch (kind) {
     case 'wing': return wingGeo(); case 'tea': return teaGeo(); case 'cobbler': return cobblerGeo(); case 'kicks': return kicksGeo()
@@ -118,17 +118,33 @@ export function carGeo(variant: number) {
   const g = b.build(); g.translate(0, 0.36, 0); return g
 }
 /** Elevated rail cars (teal + cream), `cars` of them end to end, centred on z=0. */
+const SILVER = 0xaebbd0, RIB = 0x94a0b4, TR_BLUE = 0x2f8fe6, TR_GOLD = 0xffc22e, TR_ORANGE = 0xff7a1f, GLASS = 0x5fa8d8
 export function trainGeo(cars: number) {
   const b = new GeoBuilder(), len = cars * CAR_LEN
   for (let i = 0; i < cars; i++) {
-    const z = -len / 2 + CAR_LEN * (i + 0.5)
-    b.box(2.15, TRAIN_H - 0.5, CAR_LEN - 0.4, 0, 0.5, z, 0x2ec4b6); b.box(2.2, 0.2, CAR_LEN - 0.4, 0, TRAIN_H - 0.2, z, 0xdadada)
-    b.box(2.2, 0.35, CAR_LEN - 0.4, 0, 0.9, z, 0xfff1d6); b.box(2.2, 0.2, CAR_LEN - 0.4, 0, 0.45, z, 0xff8f6b)
-    for (let w = 0; w < 5; w++) for (const s of [-1, 1]) b.box(0.05, 0.75, 1.8, s * 1.1, 1.6, z - 5.4 + w * 2.7, 0x1f3a44)
-    b.box(1.6, 0.18, CAR_LEN - 2, 0, TRAIN_H - 0.05, z, 0xbcbcbc)
+    const z = -len / 2 + CAR_LEN * (i + 0.5), L = CAR_LEN - 0.4
+    b.box(2.15, TRAIN_H - 0.5, L, 0, 0.5, z, SILVER); b.box(2.2, 0.2, L, 0, TRAIN_H - 0.2, z, 0xe4e8ee); b.box(1.6, 0.18, CAR_LEN - 2, 0, TRAIN_H - 0.05, z, RIB)
+    b.box(2.2, 0.16, L, 0, 1.02, z, TR_BLUE); b.box(2.2, 0.14, L, 0, 0.88, z, TR_GOLD); b.box(2.2, 0.14, L, 0, 0.74, z, TR_ORANGE); b.box(2.22, 0.22, L, 0, 0.45, z, 0x3a3f4a)
+    for (let w = 0; w < 5; w++) for (const s of [-1, 1]) { b.box(0.05, 0.75, 1.8, s * 1.1, 1.6, z - 5.4 + w * 2.7, GLASS); if (w === 2) b.box(0.06, 1.5, 1.3, s * 1.1, 1.0, z - 5.4 + w * 2.7, 0x8e96a3) }
   }
-  b.box(2.1, 1.8, 0.1, 0, 1.0, len / 2 - 0.15, 0x9fd8e8); b.ball(0.16, -0.7, 0.9, len / 2, 0xfff0b8, 1, 1, 0.4, 0); b.ball(0.16, 0.7, 0.9, len / 2, 0xfff0b8, 1, 1, 0.4, 0)
+  const f = len / 2 - 0.15
+  b.box(2.1, 1.0, 0.1, 0, 1.55, f, GLASS); b.box(0.5, 1.9, 0.12, 0, 0.75, f + 0.02, 0x2a2f3a); b.box(2.14, 0.18, 0.12, 0, 0.98, f, TR_ORANGE); b.box(2.14, 0.14, 0.12, 0, 0.82, f, TR_GOLD)
+  b.ball(0.17, -0.72, 0.6, len / 2, 0xfff4c0, 1, 1, 0.4, 0); b.ball(0.17, 0.72, 0.6, len / 2, 0xfff4c0, 1, 1, 0.4, 0)
   return b.build()
+}
+export function busGeo() {
+  const b = new GeoBuilder(), L = OBS_DEF.bus.len - 0.1, H = OBS_DEF.bus.top
+  b.box(2.15, H - 0.75, L, 0, 0.55, 0, SILVER); b.box(1.5, 0.3, 2.6, 0, H - 0.2, -1.2, 0xdfe3ea); b.box(2.18, 0.18, L, 0, 0.5, 0, 0x3a3f4a)
+  for (const s of [-1, 1]) {
+    b.box(0.05, 0.85, L - 1.2, s * 1.08, 1.75, 0, GLASS)
+    for (let i = 0; i < 4; i++) b.box(0.06, 0.9, 0.12, s * 1.09, 1.72, -3.2 + i * 2.2, SILVER)
+    b.box(0.05, 0.16, L, s * 1.09, 1.4, 0, TR_BLUE); b.box(0.05, 0.14, L, s * 1.09, 1.25, 0, TR_GOLD); b.box(0.05, 0.14, L, s * 1.09, 1.11, 0, TR_ORANGE)
+    for (const z of [2.9, -2.9]) b.cyl(0.5, 0.5, 0.3, s * 0.98, 0.0, z, 0x20202a, 12, [0, 0, Math.PI / 2]).cyl(0.26, 0.26, 0.32, s * 0.99, 0.0, z, 0xd8dce2, 8, [0, 0, Math.PI / 2])
+  }
+  const f = L / 2 + 0.01
+  b.box(1.9, 1.15, 0.06, 0, 1.5, f, GLASS); b.box(1.5, 0.28, 0.07, 0, 2.5, f, 0x15161c); b.box(2.1, 0.14, 0.06, 0, 1.25, f, TR_BLUE); b.box(2.1, 0.12, 0.06, 0, 1.12, f, TR_GOLD); b.box(2.1, 0.12, 0.06, 0, 1.0, f, TR_ORANGE)
+  b.ball(0.15, -0.78, 0.8, f, 0xfff4c0, 1, 1, 0.4, 0); b.ball(0.15, 0.78, 0.8, f, 0xfff4c0, 1, 1, 0.4, 0)
+  const g = b.build(); g.translate(0, 0.5, 0); return g
 }
 export function rampGeo() {
   const b = new GeoBuilder(), w = LANE_W - 0.3

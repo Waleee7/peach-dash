@@ -7,7 +7,7 @@ export const CHUNK = 40
 export const DISTRICT_CHUNKS = 16
 export const DISTRICT_LEN = CHUNK * DISTRICT_CHUNKS
 export const DISTRICTS = [
-  { id: 'downtown', name: 'DOWNTOWN', sub: 'Gold spire. Gold dome. Golden hour.', ground: 'asphalt' as GroundKind },
+  { id: 'downtown', name: 'DOWNTOWN', sub: 'Gold spire. Gold dome. Neon hour.', ground: 'asphalt' as GroundKind },
   { id: 'beltline', name: 'THE BELTLINE', sub: 'Murals, brick and string lights.', ground: 'concrete' as GroundKind },
   { id: 'park', name: 'PEACH PARK', sub: 'Ferris wheel. Orchard. Red clay.', ground: 'clay' as GroundKind },
 ]
@@ -18,15 +18,11 @@ export const FOG_FAR = 300
 const FAR = 400
 const CAPX = 1.9
 
-/* ---------------- atmosphere: golden hour -> night -> dawn ---------------- */
+/* ---------------- atmosphere: neon dusk -> night -> dusk, keyed to the wallpapers ---------------- */
 interface Key { t: number; top: string; hor: string; sun: string; sunH: number; hemiS: string; hemiG: string; hemiI: number; dir: string; dirI: number; win: number; stars: number; sk: [number, number, number] }
-const KEYS: Key[] = [
-  { t: 0.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0, sk: [0.75, 0.25, 0] },
-  { t: 0.24, top: '#e8708a', hor: '#ff9a5a', sun: '#ffb070', sunH: 0.0, hemiS: '#ffc0a0', hemiG: '#9a6080', hemiI: 0.95, dir: '#ff8a5a', dirI: 1.3, win: 0.45, stars: 0.1, sk: [0, 1, 0] },
-  { t: 0.5, top: '#243a86', hor: '#d0608a', sun: '#000000', sunH: -0.4, hemiS: '#b4bdff', hemiG: '#8a6a98', hemiI: 1.2, dir: '#b4c0ff', dirI: 1.0, win: 1, stars: 1, sk: [0, 0, 1] },
-  { t: 0.78, top: '#34478e', hor: '#f58a7a', sun: '#ffb080', sunH: -0.06, hemiS: '#c8bef0', hemiG: '#a06a78', hemiI: 1.15, dir: '#ffa080', dirI: 1.1, win: 0.6, stars: 0.5, sk: [0, 0.65, 0.35] },
-  { t: 1.0, top: '#6fa8dc', hor: '#ffc98b', sun: '#ffe0a0', sunH: 0.1, hemiS: '#ffe9c8', hemiG: '#d19a76', hemiI: 1.05, dir: '#ffc07a', dirI: 1.7, win: 0, stars: 0, sk: [0.75, 0.25, 0] },
-]
+const DUSK = { top: '#1c0d63', hor: '#3b1b73', sun: '#000000', sunH: -0.4, hemiS: '#ffc4ec', hemiG: '#7d5aa8', hemiI: 1.05, dir: '#ffb490', dirI: 1.25, win: 0.65, stars: 0.15, sk: [0, 1, 0] as [number, number, number] }
+const NIGHT = { top: '#120c4c', hor: '#1c1856', sun: '#000000', sunH: -0.4, hemiS: '#a8b6ff', hemiG: '#5f4f9c', hemiI: 1.0, dir: '#b8c4ff', dirI: 0.85, win: 1, stars: 1, sk: [0, 0, 1] as [number, number, number] }
+const KEYS: Key[] = [{ t: 0, ...DUSK }, { t: 0.3, ...DUSK }, { t: 0.46, ...NIGHT }, { t: 0.76, ...NIGHT }, { t: 0.92, ...DUSK }, { t: 1, ...DUSK }]
 const SKY_VS = `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }`
 const SKY_FS = `varying vec3 vDir; uniform vec3 uTop; uniform vec3 uHor; uniform vec3 uSun; uniform float uSunH; uniform float uStars; uniform float uTime;
 float h3(vec3 p){ p = fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
@@ -60,7 +56,7 @@ export class Atmosphere {
     scene.add(this.sky, this.hemi, this.dir, this.dir.target, this.ground)
   }
   private mix(a: string, b: string, f: number, out: THREE.Color) { return out.set(a).lerp(this.cb.set(b), f) }
-  update(dist: number, time: number, camPos: THREE.Vector3, winMats: THREE.MeshLambertMaterial[]) {
+  update(dist: number, time: number, camPos: THREE.Vector3, winMats: THREE.MeshLambertMaterial[], dt = 0.016) {
     const t = ((dist % (DISTRICT_LEN * 3)) / (DISTRICT_LEN * 3)) % 1
     let i = 0; while (i < KEYS.length - 2 && t > KEYS[i + 1].t) i++
     const a = KEYS[i], b = KEYS[i + 1], f = (t - a.t) / (b.t - a.t), sf = f * f * (3 - 2 * f)
@@ -73,9 +69,9 @@ export class Atmosphere {
     this.u.uHor.value.lerp(this.u.uSun.value, 0.1)
     const fog = this.scene.fog as THREE.Fog; fog.color.copy(this.u.uHor.value)
     ;(this.ground.material as THREE.MeshBasicMaterial).color.copy(fog.color)
-    for (const m of winMats) m.emissiveIntensity = this.night * 1.15
+    for (const m of winMats) m.emissiveIntensity = this.night * 1.0
     const sk = a.sk.map((v, n) => v + (b.sk[n] - v) * sf) as [number, number, number]
-    this.backdrop.update(sk, fog.color, camPos, Math.sin(dist / 520) * 0.1, time)
+    this.backdrop.update(sk, fog.color, this.u.uTop.value, camPos, Math.sin(dist / 520) * 0.1, time, dt)
     this.sky.position.copy(camPos); this.ground.position.x = camPos.x; this.ground.position.z = camPos.z
   }
 }
@@ -86,7 +82,8 @@ interface Item { v: string; x: number; y: number; d: number; ry: number; sx: num
 interface Chunk { idx: number; district: number; items: Item[]; ground: THREE.Mesh; t0: number }
 
 const G = { gold: 0xf3b83a, cream: 0xf1e4c8, brick: 0xb5533c, green: 0x5f9f48, dkgreen: 0x3f7f3a, trunk: 0x7a4b2e, peach: 0xff8f6b, steel: 0x9fb3c8 }
-const TINTS = [0xfff1e0, 0xffd9b8, 0xd8f0ee, 0xffcfc4, 0xe6e0f5, 0xf5e6b8, 0xcfe3f2]
+const TINTS = [0x6d5cae, 0x5c50a0, 0x7f5ba8, 0x5068b4, 0x8c5aa0, 0x5a6cac, 0x7160b8]
+const NEON = [0x27e6ff, 0xff5ec4, 0x9a5cff, 0xffb347]
 
 function towerGeo(kind: number, w: number, h: number, d: number) {
   const b = new GeoBuilder(), off = (kind * 0.25) % 1
@@ -95,6 +92,12 @@ function towerGeo(kind: number, w: number, h: number, d: number) {
   if (kind === 1) { b.box(w * 0.75, h * 0.18, d * 0.75, 0, h, 0, 0xffffff, { win: true, off }); b.box(w * 0.45, h * 0.12, d * 0.45, 0, h * 1.18, 0, 0xffe9b0, { win: true }); b.cone(w * 0.25, h * 0.2, 0, h * 1.3, 0, G.gold, 4, Math.PI / 4) }
   if (kind === 2) { b.wedge(w, h * 0.16, d, 0, h, 0, 0xffffff); b.box(w, 1.4, d * 0.2, 0, h + h * 0.16, -d * 0.4, 0xffffff) }
   if (kind === 3) { b.cone(w * 0.72, h * 0.22, 0, h, 0, 0xfff1e0, 4, Math.PI / 4); b.box(w * 0.2, h * 0.08, d * 0.2, 0, h + h * 0.22, 0, G.gold) }
+  return b.build()
+}
+/** Lit trim along a tower's roofline and corners, the outlined look of the wallpapers. */
+function towerNeonGeo(w: number, h: number, d: number, color: number) {
+  const b = new GeoBuilder(), t = 0.3
+  for (const s of [-1, 1]) { b.box(w + t, t, t, 0, h, s * d / 2, color); b.box(t, t, d + t, s * w / 2, h, 0, color); for (const q of [-1, 1]) b.box(t, h, t, s * w / 2, 0, q * d / 2, color) }
   return b.build()
 }
 function spireGeo() {
@@ -206,7 +209,7 @@ function railGeo() {
 }
 function railcarGeo() {
   const b = new GeoBuilder(), g = new GeoBuilder()
-  b.box(3, 3, 14, 0, 0, 0, 0x2ec4b6); b.box(3.05, 0.5, 14.05, 0, 1.0, 0, 0xfff1d6); b.box(3.05, 0.4, 14.05, 0, 0.1, 0, 0xff8f6b); b.box(2.4, 0.3, 12, 0, 3, 0, 0xdadada)
+  b.box(3, 3, 14, 0, 0, 0, 0xaebbd0); b.box(3.05, 0.2, 14.05, 0, 1.06, 0, 0x2f8fe6); b.box(3.05, 0.18, 14.05, 0, 0.88, 0, 0xffc22e); b.box(3.05, 0.18, 14.05, 0, 0.7, 0, 0xff7a1f); b.box(3.05, 0.3, 14.05, 0, 0.1, 0, 0x3a3f4a); b.box(2.4, 0.3, 12, 0, 3, 0, 0xe4e8ee)
   for (let i = 0; i < 5; i++) { g.box(3.1, 0.9, 1.7, 0, 1.6, -5.6 + i * 2.8, 0xfff0c0) }
   return [b.build(), g.build()] as const
 }
@@ -245,6 +248,19 @@ function buildFerris(mats: { prop: THREE.Material; glow: THREE.Material }): Ferr
   return { group, wheel, cabins }
 }
 
+/** Unit quad standing on its base, for the sprite signs. */
+const signQuad = () => { const g = new THREE.PlaneGeometry(1, 1); g.translate(0, 0.5, 0); return g }
+function signPoleGeo() {
+  const b = new GeoBuilder(); b.cyl(0.14, 0.18, 6, 0, 0, 0, 0x4a4a5c, 6); return b.build()
+}
+function billboardGeo() {
+  const b = new GeoBuilder(), g = new GeoBuilder()
+  for (const s of [-1, 1]) b.box(0.4, 7, 0.4, s * 3.8, 0, -0.3, 0x2a2438)
+  b.box(12.2, 6.2, 0.3, 0, 6.6, -0.3, 0x2a1f5c)
+  g.box(12.5, 0.18, 0.34, 0, 12.8, -0.26, 0xff5ec4); g.box(12.5, 0.18, 0.34, 0, 6.5, -0.26, 0x27e6ff)
+  return [b.build(), g.build()] as const
+}
+
 /** 700 m wide so the lot colour runs out past the fog on both sides; UVs keep the road texture on the central 110 m. */
 function wideGround() {
   const g = new THREE.PlaneGeometry(700, CHUNK, 1, 1), uv = g.attributes.uv as THREE.BufferAttribute, pos = g.attributes.position as THREE.BufferAttribute
@@ -278,6 +294,7 @@ export class World {
       concrete: bend(new THREE.MeshLambertMaterial({ map: groundTexture('concrete') })),
       clay: bend(new THREE.MeshLambertMaterial({ map: groundTexture('clay') })),
     }
+    for (const m of Object.values(this.groundMats)) m.color.set(0xbfaee0)   // cool the street down so it sits under the neon sky
     const add = (k: string, geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, ext = 14, also?: string) => {
       cap = Math.ceil(cap * CAPX)
       const def: VariantDef = { geo, mat, cap, ext, also }
@@ -287,7 +304,8 @@ export class World {
       scene.add(mesh); this.variants.set(k, { def, mesh, n: 0 })
     }
     const sizes: [number, number, number][] = [[9, 34, 9], [11, 50, 10], [12, 62, 11], [10, 78, 10]]
-    sizes.forEach(([w, h, d], i) => add('tower' + i, towerGeo(i, w, h, d), glassMat, 70, 8))
+    const neon = bend(new THREE.MeshBasicMaterial({ vertexColors: true }), false)
+    sizes.forEach(([w, h, d], i) => { add('tower' + i, towerGeo(i, w, h, d), glassMat, 70, 8, 'towerN' + i); add('towerN' + i, towerNeonGeo(w, h, d, NEON[i]), neon, 70, 8) })
     add('spire', spireGeo(), glassMat, 2, 14); add('capitol', capitolGeo(), prop, 2, 20)
     const [fb, fg] = foxGeo(); add('fox', fb, prop, 2, 16, 'foxGlow'); add('foxGlow', fg, glow, 2)
     const [wb, wg] = warehouseGeo(); add('warehouse', wb, brickMat, 3, 24, 'warehouseGlow'); add('warehouseGlow', wg, glow, 3)
@@ -303,6 +321,13 @@ export class World {
     add('rail', railGeo(), prop, 8, 22)
     const [rb, rg] = railcarGeo(); add('railcar', rb, prop, 10, 8, 'railcarGlow'); add('railcarGlow', rg, glow, 10)
     const [fob, fog] = fountainGeo(); add('fountain', fob, prop, 2, 7, 'fountainGlow'); add('fountainGlow', fog, glow, 2)
+    const tl = new THREE.TextureLoader()
+    for (const n of ['i285', 'atl', 'hawk', 'star', 'bulldog', 'peach', 'train', 'bus']) {
+      const map = tl.load(`${import.meta.env.BASE_URL}art/badge-${n}.webp`); map.colorSpace = THREE.SRGBColorSpace
+      add('art' + n, signQuad(), bend(new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide })), 6, 8)
+    }
+    add('signPole', signPoleGeo(), prop, 8, 2)
+    const [bbb, bbg] = billboardGeo(); add('billboard', bbb, prop, 6, 8, 'billboardGlow'); add('billboardGlow', bbg, glow, 6)
     this.ferris = buildFerris({ prop, glow })
     this.ferris.group.visible = false; scene.add(this.ferris.group)
   }
@@ -321,6 +346,11 @@ export class World {
     const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)]
     const skyline = (n: number, lo: number, hi: number, vars: string[]) => { for (const s of [-1, 1]) for (let i = 0; i < n; i++) { const sc = 1.5 + r() * 1.7; put(pick(vars), s * (lo + r() * (hi - lo)), r() * CHUNK, { sx: sc, sy: sc * (0.9 + r() * 0.6), sz: sc, tint: pick(TINTS) }) } }
     const towers = ['tower0', 'tower1', 'tower2', 'tower3']
+    /** A big lit roadside billboard carrying one sprite, stretched to fit the art's own shape. */
+    const bill = (s: number, zz: number, art: string, w = 5.6, h = 5.6) => {
+      const ry = s * -0.3, x = s * 15
+      put('billboard', x, zz, { ry }); put('art' + art, x, zz, { ry, y: 6.9 + (5.6 - h) / 2, sx: w, sy: h, sz: 1 })
+    }
     if (district === 0) {
       for (const s of [-1, 1]) {
         put('lamp', s * 5.6, 10, { ry: s > 0 ? Math.PI : 0 }); put('lamp', s * 5.6, 30, { ry: s > 0 ? Math.PI : 0 })
@@ -330,9 +360,12 @@ export class World {
       }
       skyline(2, 42, 95, towers)
       if (r() < 0.4) put('spire', (r() < 0.5 ? -1 : 1) * (60 + r() * 30), r() * CHUNK, { sx: 0.85, sy: 0.85, sz: 0.85 })
-      if (k === 3) put('spire', 27, 20, { sx: 0.7, sy: 0.7, sz: 0.7 })
+      if (k === 3) put('spire', 34, 20, { sx: 0.7, sy: 0.7, sz: 0.7 })
       if (k === 8) put('capitol', -27, 20, { ry: Math.PI / 2 })
       if (k === 12) put('fox', 17.5, 20, { ry: -Math.PI / 2 })
+      if (k % 4 === 2) { const s = k % 8 === 2 ? 1 : -1; put('signPole', s * 8.2, 12); put('arti285', s * 8.2, 12, { y: 5.2, sx: 3.2, sy: 3.2 }) }
+      if (k % 6 === 4) bill(1, 26, 'atl', 10, 5.2)
+      if (k % 6 === 1 && idx > DISTRICT_CHUNKS) bill(1, 8, 'train')   // not beside the title screen's opening shot
       put('rail', -17, 20); if (k % 4 === 1) for (let i = 0; i < 3; i++) put('railcar', -17, 36 - i * 14.8, { y: 8.05, drift: 16 })
     } else if (district === 1) {
       for (const s of [-1, 1]) {
@@ -346,6 +379,8 @@ export class World {
         else { put('loft', s * (21 + r() * 4), 10 + r() * 6, { ry: s < 0 ? Math.PI / 2 : -Math.PI / 2 }); put('loft', s * (20 + r() * 4), 32, { ry: s < 0 ? Math.PI / 2 : -Math.PI / 2, tint: 0xffe0d0 }) }
         put(pick(towers), s * (44 + r() * 40), r() * CHUNK, { sx: 1.8, sy: 1.8, sz: 1.8, tint: pick(TINTS) })
       }
+      if (k % 4 === 1) bill(k % 8 === 1 ? 1 : -1, 26, k % 8 === 1 ? 'hawk' : 'star')
+      if (k % 4 === 3) bill(k % 8 === 3 ? -1 : 1, 26, k % 8 === 3 ? 'bulldog' : 'bus', 8, 5.4)
       put('cross', 0, 20); put('crossPole', -6.4, 20); put('crossPole', 6.4, 20)
       skyline(1, 80, 120, towers)
     } else {
@@ -358,6 +393,7 @@ export class World {
         put('lamp', s * 5.6, 20, { ry: s > 0 ? Math.PI : 0 })
         const hs = 28 + r() * 22; put('hill', s * (55 + r() * 40), r() * CHUNK, { sx: hs, sy: 7 + r() * 9, sz: hs, y: -2 })
       }
+      if (k % 5 === 2) bill(k % 10 === 2 ? 1 : -1, 16, 'peach')
       skyline(2, 70, 115, towers)
       if (k === 5) put('ferris', 32, 20)
       if (k === 9) put('fountain', -14, 20)
@@ -389,7 +425,7 @@ export class World {
         const z = rel, tower = it.v.startsWith('tower') || it.v === 'spire'
         if (z - ext > 14 || z + ext < -(tower ? farLim - 90 : farLim)) continue
         this.write(v, it, z, tower)
-        if (v.def.also) { const a = this.variants.get(v.def.also)!; this.write(a, it, z) }
+        if (v.def.also) { const a = this.variants.get(v.def.also)!; this.write(a, it, z, tower, tower) }
       }
     }
     for (const v of this.variants.values()) {
@@ -404,19 +440,19 @@ export class World {
       for (const c of f.cabins) c.rotation.z = time * 0.18
     }
   }
-  private write(v: { def: VariantDef; mesh: THREE.InstancedMesh; n: number }, it: Item, z: number, tower = false) {
+  private write(v: { def: VariantDef; mesh: THREE.InstancedMesh; n: number }, it: Item, z: number, tower = false, white = false) {
     if (v.n >= v.def.cap) return
     const s = Math.sin(it.ry), c = Math.cos(it.ry)
     const zz = z
     const p = v.mesh.instanceMatrix.array as Float32Array, o = v.n * 16
     p[o] = c * it.sx; p[o + 1] = 0; p[o + 2] = -s * it.sx; p[o + 3] = 0
-    // portrait: shorter side towers and a wider street gap so the skyline shows above the canyon
-    const hk = tower ? 1 - 0.55 * this.portrait : 1, xk = tower && Math.abs(it.x) < 60 ? 1 + 0.6 * this.portrait : 1
+    // keep the canyon low and wide so the wallpaper skyline stays in view, more so in portrait
+    const hk = tower ? 0.6 - 0.18 * this.portrait : 1, xk = tower && Math.abs(it.x) < 60 ? 1.3 + 0.3 * this.portrait : 1
     p[o + 4] = 0; p[o + 5] = it.sy * hk; p[o + 6] = 0; p[o + 7] = 0
     p[o + 8] = s * it.sz; p[o + 9] = 0; p[o + 10] = c * it.sz; p[o + 11] = 0
     p[o + 12] = it.x * xk; p[o + 13] = it.y; p[o + 14] = zz; p[o + 15] = 1
     const ca = v.mesh.instanceColor!.array as Float32Array, i3 = v.n * 3
-    this.col.setHex(it.tint); ca[i3] = this.col.r; ca[i3 + 1] = this.col.g; ca[i3 + 2] = this.col.b
+    this.col.setHex(white ? 0xffffff : it.tint); ca[i3] = this.col.r; ca[i3 + 1] = this.col.g; ca[i3 + 2] = this.col.b
     v.n++
   }
 }

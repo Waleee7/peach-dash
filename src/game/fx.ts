@@ -6,15 +6,31 @@ const PATTERNS: Record<string, number | number[]> = {
   tea: [14, 30, 14, 30, 34], board: [14, 30, 14, 30, 34], pad: [30, 20, 44], crash: [110, 40, 70, 40, 240],
   wing: [14, 20, 14, 20, 14, 20, 40, 30, 70], cobbler: [24, 30, 12, 30, 40], kicks: [10, 16, 30, 24, 50], glide: [60, 40, 20, 20, 20, 20, 20],
   crate: [18, 24, 18, 24, 18, 60], letter: [12, 20, 24], atlanta: [30, 30, 30, 30, 30, 30, 120], stumble: [60, 30, 36, 24, 80], smash: [40, 14, 40], honk: [18, 40, 18], end: [8, 24, 8], level: [20, 30, 20, 30, 20, 30, 90],
-  shield: [50, 30, 50], ui: 6, buy: [12, 30, 22], revive: [20, 40, 20, 40, 60], go: [30, 40, 30, 40, 90],
+  badge: [16, 24, 32], badgeSet: [40, 30, 40, 30, 40, 30, 160], shield: [50, 30, 50], ui: 6, buy: [12, 30, 22], revive: [20, 40, 20, 40, 60], go: [30, 40, 30, 40, 90],
 }
+/** iOS Safari has no Vibration API, but flipping a native switch control plays the system tick. */
+let iosLabel: HTMLLabelElement | undefined, lastTick = 0
+function iosTick() {
+  if (!iosLabel) {
+    iosLabel = document.createElement('label'); iosLabel.setAttribute('aria-hidden', 'true'); iosLabel.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden'
+    const box = document.createElement('input'); box.type = 'checkbox'; box.setAttribute('switch', ''); box.tabIndex = -1
+    iosLabel.append(box); document.body.append(iosLabel)
+  }
+  const now = performance.now(); if (now - lastTick < 45) return
+  lastTick = now; iosLabel.click()
+}
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 export const Haptics = {
   on: true,
   play(name: string) {
-    if (!this.on || typeof navigator === 'undefined' || !('vibrate' in navigator)) return
+    if (!this.on || typeof navigator === 'undefined') return
     const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation
     if (ua && !ua.hasBeenActive) return
-    try { navigator.vibrate(PATTERNS[name] ?? 8) } catch { /* unsupported */ }
+    const pat = PATTERNS[name] ?? 8
+    if ('vibrate' in navigator) { try { navigator.vibrate(pat) } catch { /* unsupported */ } return }
+    if (!isIOS()) return
+    const ticks = Array.isArray(pat) ? Math.min(4, Math.ceil(pat.length / 2)) : 1
+    for (let i = 0; i < ticks; i++) setTimeout(iosTick, i * 70)
   },
 }
 

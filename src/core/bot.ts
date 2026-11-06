@@ -13,29 +13,29 @@ export function botAct(sim: Sim) {
   const wanted = (o: Obstacle) => ((o.kind === 'ramp' ? o.id : o.id - 1) & 1) === 0
   /** Is `o` something lane `l` must keep clear of? Strict also avoids the ramps the bot would climb on purpose. */
   const hard = (o: Obstacle, l: number, strict: boolean) => {
-    if (o.kind === 'truck' || o.kind === 'car') return true
+    if (o.kind === 'truck' || o.kind === 'bus' || o.kind === 'car') return true
     if (o.kind !== 'train' && o.kind !== 'ramp') return false
     if (o.d - P > 0.2) return strict || !wanted(o)         // still ahead
     return !(l === p.lane && p.y > 0.4)                      // alongside: only fine if we are standing on it
   }
   const blocked = (l: number, strict = false) => ahead.some(o => inLane(l, o) && hard(o, l, strict) && o.d - P < closing(o) * 1.7)
   /** A solid thing is level with (or about to be level with) the player in lane m: don't swerve into its flank. */
-  const occupied = (m: number) => sim.track.obstacles.some(o => !o.smashed && inLane(m, o) && ['truck', 'car', 'train', 'ramp'].includes(o.kind) && o.d - P < 3.5 && o.d + o.len > P - 3.5)
+  const occupied = (m: number) => sim.track.obstacles.some(o => !o.smashed && inLane(m, o) && ['truck', 'bus', 'car', 'train', 'ramp'].includes(o.kind) && o.d - P < 3.5 && o.d + o.len > P - 3.5)
   const step = (to: number) => {
     const next = p.lane + Math.sign(to - p.lane)
     if (next === p.lane || occupied(next)) return false
     next < p.lane ? sim.left() : sim.right(); return true
-  }
-  if (blocked(p.lane)) {
-    const order = [0, 1, 2].filter(l => !blocked(l, true)).sort((a, b) => Math.abs(a - p.lane) - Math.abs(b - p.lane))
-    if (order.length) step(order[0])        // if a train is alongside, hold until it has passed
-    return
   }
   for (const o of ahead) {
     if (!inLane(p.lane, o)) continue
     const dd = o.d - P
     if ((o.kind === 'sign' || o.kind === 'lowsign') && dd < sp * 0.32 && dd > 0) sim.slide()
     if ((o.kind === 'barrier' || o.kind === 'cones' || o.kind === 'scooter' || o.kind === 'barricade') && dd < sp * 0.26 && dd > 0) sim.jump()
+  }
+  if (blocked(p.lane)) {
+    const order = [0, 1, 2].filter(l => !blocked(l, true)).sort((a, b) => Math.abs(a - p.lane) - Math.abs(b - p.lane))
+    if (order.length) step(order[0])        // if a train is alongside, hold until it has passed
+    return
   }
   const centred = Math.abs(p.x - laneX(p.lane)) < LANE_W * 0.2
   const steady = !ahead.some(o => o.kind !== 'ramp' && o.kind !== 'train' && o.d - P < sp * 0.6 && o.d - P > -1)

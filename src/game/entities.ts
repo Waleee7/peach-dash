@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { GeoBuilder, bend, glowTexture, haloTexture } from './gfx'
-import { LANE_W, LETTERS, SPAWN_AHEAD, laneX, type Obstacle, type Sim } from '../core/sim'
+import { BADGES, LANE_W, LETTERS, SPAWN_AHEAD, laneX, type Obstacle, type Sim } from '../core/sim'
 import { POWERS, type PowerKind } from '../core/powers'
-import { pickupGeo, PICKUP_SCALE, scooterGeo, barricadeGeo, lowSignGeo, carGeo, trainGeo, rampGeo } from './models'
+import { pickupGeo, PICKUP_SCALE, scooterGeo, barricadeGeo, lowSignGeo, carGeo, trainGeo, rampGeo, busGeo } from './models'
 
 const TRUCK_COLORS = [0xff7a66, 0x3fe0d0, 0xffd23d]
 function barrierGeo() {
@@ -47,8 +47,8 @@ function signGeo(span: number) {
 }
 function peachGeo() {
   const b = new GeoBuilder()
-  b.ball(0.32, 0, 0, 0, 0xffc383, 1, 0.97, 1, 2)                                   // gold body
-  b.ball(0.24, 0.1, 0.02, -0.12, 0xff93a4, 1, 1, 0.7, 1)                           // pink blush
+  b.ball(0.32, 0, 0, 0, 0xffa94f, 1, 0.97, 1, 2)                                   // gold body
+  b.ball(0.24, 0.1, 0.02, -0.12, 0xff5f4a, 1, 1, 0.7, 1)                           // pink blush
   b.box(0.035, 0.5, 0.05, 0, -0.26, -0.3, 0xd9546e, { rz: 0.0, rx: 0.12 })        // cleft seam
   b.box(0.03, 0.1, 0.03, 0, 0.3, 0, 0x6b4a3a)                                      // stem
   b.box(0.3, 0.035, 0.14, 0.17, 0.4, 0, 0x2fbf4f, { rz: 0.45 })                    // leaf
@@ -82,17 +82,24 @@ export class Entities {
   private pads: THREE.Mesh[] = []
   private picks = new Map<string, { meshes: THREE.Mesh[]; used: number }>()
   private halos: THREE.Sprite[] = []
+  private badgeGeo = new THREE.PlaneGeometry(1, 1)
+  private badgeMats = new Map<string, THREE.MeshBasicMaterial>()
   shadow: THREE.Mesh
   private d = new THREE.Object3D()
   constructor(public scene: THREE.Scene) {
     this.propMat = rimMat(bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x4a3038 })))
     this.pickMat = rimMat(bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x8a6040 })))
-    const pm = bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xa04a3a }))
+    const pm = bend(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xb85a1c }))
     this.peaches = new THREE.InstancedMesh(peachGeo(), pm, 640); this.peaches.frustumCulled = false; this.peaches.count = 0; scene.add(this.peaches)
     const padMat = bend(new THREE.MeshBasicMaterial({ vertexColors: true }))
     const pg = padGeo()
     for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(pg, padMat); m.visible = false; scene.add(m); this.pads.push(m) }
     for (let i = 0; i < 8; i++) { const h = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); h.visible = false; h.renderOrder = 4; scene.add(h); this.halos.push(h) }
+    const tl = new THREE.TextureLoader()
+    for (const n of BADGES) {
+      const map = tl.load(`${import.meta.env.BASE_URL}art/badge-${n}.webp`); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4
+      this.badgeMats.set(n, bend(new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.06, side: THREE.DoubleSide, depthWrite: false })))
+    }
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, fog: false }))
     this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = 0.04; this.shadow.renderOrder = 1; scene.add(this.shadow)
   }
@@ -100,7 +107,7 @@ export class Entities {
     const key = o.kind === 'truck' || o.kind === 'car' ? o.kind + (o.variant % 3) : o.kind === 'sign' || o.kind === 'lowsign' || o.kind === 'barricade' ? o.kind + o.span : o.kind === 'train' ? 'train' + Math.round(o.len / 14.8) : o.kind
     let g = this.geos.get(key)
     if (!g) {
-      g = o.kind === 'barrier' ? barrierGeo() : o.kind === 'cones' ? conesGeo() : o.kind === 'truck' ? truckGeo(o.variant) : o.kind === 'sign' ? signGeo(o.span)
+      g = o.kind === 'barrier' ? barrierGeo() : o.kind === 'cones' ? conesGeo() : o.kind === 'truck' ? truckGeo(o.variant) : o.kind === 'bus' ? busGeo() : o.kind === 'sign' ? signGeo(o.span)
         : o.kind === 'scooter' ? scooterGeo() : o.kind === 'barricade' ? barricadeGeo(o.span) : o.kind === 'lowsign' ? lowSignGeo(o.span)
         : o.kind === 'car' ? carGeo(o.variant) : o.kind === 'train' ? trainGeo(Math.round(o.len / 14.8)) : rampGeo()
       this.geos.set(key, g)
@@ -146,6 +153,15 @@ export class Entities {
       } else if (k.kind === 'pad') {
         const m = this.pads[padN++]; if (!m) continue
         m.visible = true; m.position.set(x, 0.03, z); m.scale.y = 1 + Math.sin(time * 10) * 0.3
+      } else if (k.kind === 'badge') {
+        const name = BADGES[sim.badgeIdx], key = 'badge' + name
+        let pool = this.picks.get(key); if (!pool) { pool = { meshes: [], used: 0 }; this.picks.set(key, pool) }
+        let m = pool.meshes[pool.used]
+        if (!m) { m = new THREE.Mesh(this.badgeGeo, this.badgeMats.get(name)!); m.frustumCulled = false; m.renderOrder = 5; this.scene.add(m); pool.meshes.push(m) }
+        pool.used++; m.visible = true
+        m.position.set(x, y + 0.3 + Math.sin(time * 3 + k.d) * 0.16, z); m.scale.setScalar(2.1 * (1 + Math.sin(time * 5 + k.d) * 0.05)); m.rotation.set(0, Math.sin(time * 2.4 + k.d) * 0.55, 0)
+        const hl = this.halos[haloN++]
+        if (hl) { hl.visible = true; hl.position.set(x, y + 0.3, z); hl.scale.setScalar(3.4 + Math.sin(time * 4 + k.d) * 0.3); (hl.material as THREE.SpriteMaterial).color.setHex(0xffd166) }
       } else {
         const key = k.kind === 'letter' ? 'letter' + ch : k.kind
         let pool = this.picks.get(key); if (!pool) { pool = { meshes: [], used: 0 }; this.picks.set(key, pool) }

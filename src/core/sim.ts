@@ -27,16 +27,22 @@ export const CHASE_ESCAPE = 14
 /** Cars only start rolling once this close, so a moving car can never invade the rows around it. */
 export const CAR_ACTIVE = 60
 export const LETTERS = 'ATLANTA'
+/** Collect these in order during a run to trigger the x5 boost. */
+export const BADGES = ['atl', 'i285', 'hawk', 'star', 'bulldog'] as const
+export const BADGE_NAMES: Record<(typeof BADGES)[number], string> = { atl: 'ATL PLATE', i285: 'THE PERIMETER', hawk: 'RED HAWK', star: 'FIRE STAR', bulldog: 'JUNKYARD DOG' }
+export const BADGE_BOOST = 12
+export const BADGE_MUL = 5
 /** How far past the player the course is generated (must exceed the fog distance so nothing pops in). */
 export const SPAWN_AHEAD = 420
 export const speedAt = (d: number) => MAX_SPEED - (MAX_SPEED - START_SPEED) * Math.exp(-d / 3200)
 export const multiplier = (combo: number) => 1 + Math.min(4, Math.floor(combo / 10))
 
-export type ObsKind = 'barrier' | 'cones' | 'truck' | 'sign' | 'scooter' | 'barricade' | 'lowsign' | 'car' | 'train' | 'ramp'
+export type ObsKind = 'barrier' | 'cones' | 'truck' | 'bus' | 'sign' | 'scooter' | 'barricade' | 'lowsign' | 'car' | 'train' | 'ramp'
 export const OBS_DEF: Record<ObsKind, { len: number; bottom: number; top: number }> = {
   barrier: { len: 0.8, bottom: 0, top: 0.95 },
   cones: { len: 1.0, bottom: 0, top: 0.75 },
   truck: { len: 5.0, bottom: 0, top: 3.2 },
+  bus: { len: 9.0, bottom: 0, top: 3.2 },
   sign: { len: 0.7, bottom: 1.55, top: 3.4 },
   scooter: { len: 1.2, bottom: 0, top: 0.9 },
   barricade: { len: 0.9, bottom: 0, top: 1.35 },
@@ -46,7 +52,7 @@ export const OBS_DEF: Record<ObsKind, { len: number; bottom: number; top: number
   ramp: { len: RAMP_LEN, bottom: 0, top: TRAIN_H },
 }
 /** Kinds the autopilot must dodge by changing lane (it can't jump or slide them). */
-export const LANE_BLOCKERS: ObsKind[] = ['truck', 'car', 'train', 'ramp']
+export const LANE_BLOCKERS: ObsKind[] = ['truck', 'bus', 'car', 'train', 'ramp']
 
 export interface Obstacle {
   id: number; kind: ObsKind; lane: number; span: number; d: number; len: number
@@ -54,14 +60,14 @@ export interface Obstacle {
   vel?: number         // m/s along the track (cars): negative = oncoming
   smashed?: boolean    // plowed through by a Lemon Pepper Wing
 }
-export type PickKind = 'peach' | 'pad' | 'crate' | 'letter' | PowerKind
+export type PickKind = 'peach' | 'pad' | 'crate' | 'letter' | 'badge' | PowerKind
 export interface Pickup { id: number; kind: PickKind; lane: number; d: number; y: number; taken: boolean; pull: number }
 export interface Player { lane: number; x: number; y: number; vy: number; slide: number; air: boolean }
 export interface Track { obstacles: Obstacle[]; pickups: Pickup[] }
 export interface SimEvent { t: string; v?: number; k?: string; lane?: number }
 export interface Stats {
   peaches: number; near: number; jumps: number; slides: number; maxCombo: number; powerups: number
-  crates: number; letters: number; smashed: number; trainDist: number; stumbles: number; geese: number
+  crates: number; letters: number; smashed: number; trainDist: number; stumbles: number; geese: number; badges: number; sets: number
 }
 export interface RunOpts {
   levelMul?: number                                  // score multiplier from the mission level
@@ -81,6 +87,7 @@ export class Spawner {
   nextPad = 320
   nextCrate = 250
   nextLetter = 200
+  nextBadge = 170
   letters = true
   uid = 1
   constructor(seed: number) { this.rng = mulberry32(seed) }
@@ -112,6 +119,7 @@ export class Spawner {
     const r = this.rng, c = this.cursor
     const put = (kind: PickKind) => t.pickups.push({ id: this.uid++, kind, lane, d, y: 1.3, taken: false, pull: 0 })
     if (this.letters && c > this.nextLetter) { put('letter'); this.nextLetter = c + 340 + r() * 140; return true }
+    if (c > this.nextBadge) { put('badge'); this.nextBadge = c + 230 + r() * 110; return true }
     if (c > this.nextCrate) { put('crate'); this.nextCrate = c + 330 + r() * 240; return true }
     if (c > this.nextPower) {
       const pool: PowerKind[] = c < 560 ? ['tea', 'board', 'cobbler', 'kicks'] : POWER_KINDS
@@ -153,7 +161,7 @@ export class Spawner {
     let extra = 0
     const trucks = () => {
       const pick = k > 0.25 && r() < 0.5 ? others : [others[Math.floor(r() * 2)]]
-      pick.forEach(l => this.obs(t, 'truck', l, 1, c, Math.floor(r() * 3)))
+      pick.forEach(l => { if (k > 0.02 && r() < 0.32) this.obs(t, 'bus', l, 1, c - 2); else this.obs(t, 'truck', l, 1, c, Math.floor(r() * 3)) })
       this.line(t, ns, c - 4, 7)
       this.safe = ns
     }
@@ -218,13 +226,15 @@ export class Sim {
   chase = { on: false, gap: CHASE_START }
   crashCause = ''
   letterIdx = 0
+  badgeIdx = 0            // next badge in the current set
+  badgeBoost = 0          // >0: x5 score
   invincible = false      // attract mode
   reviveUsed = false
   trainTime = 0
   p: Player = { lane: 1, x: 0, y: 0, vy: 0, slide: 0, air: false }
   track: Track = { obstacles: [], pickups: [] }
   spawner: Spawner
-  stats: Stats = { peaches: 0, near: 0, jumps: 0, slides: 0, maxCombo: 0, powerups: 0, crates: 0, letters: 0, smashed: 0, trainDist: 0, stumbles: 0, geese: 0 }
+  stats: Stats = { peaches: 0, near: 0, jumps: 0, slides: 0, maxCombo: 0, powerups: 0, crates: 0, letters: 0, smashed: 0, trainDist: 0, stumbles: 0, geese: 0, badges: 0, sets: 0 }
   onEvent: (e: SimEvent) => void = () => {}
   opts: Required<RunOpts>
   private crateRng: () => number
@@ -256,7 +266,7 @@ export class Sim {
   }
   get mult() { return multiplier(this.combo) }
   /** Everything that scales score: combo streak x mission level x Peach Cobbler. */
-  get scoreMul() { return this.mult * this.opts.levelMul * (this.pw.cobbler > 0 ? 2 : 1) }
+  get scoreMul() { return this.mult * this.opts.levelMul * (this.pw.cobbler > 0 ? 2 : 1) * (this.badgeBoost > 0 ? BADGE_MUL : 1) }
   get height() { return this.p.slide > 0 ? SLIDE_H : PLAYER_H }
   get onTrain() { return !this.p.air && this.p.y > TRAIN_H - 0.3 }
   private emit(t: string, v?: number, k?: string, lane?: number) { this.onEvent({ t, v, k, lane }) }
@@ -348,6 +358,7 @@ export class Sim {
     }
     for (const k of ['invuln', 'comboT', 'stumbleT', 'stumbleFx'] as const) if (this[k] > 0) this[k] -= h
     if (this.comboT <= 0 && this.combo) this.combo = 0
+    if (this.badgeBoost > 0 && (this.badgeBoost -= h) <= 0) { this.badgeBoost = 0; this.emit('badgeEnd') }
     // goose flock gives up once you out-run it
     if (this.chase.on) {
       this.chase.gap += (0.62 + Math.max(0, this.speed - 20) * 0.02 + (this.boost > 0 ? 1.4 : 0)) * h
@@ -449,6 +460,11 @@ export class Sim {
         this.emit('letter', i, LETTERS[i])
         if (this.letterIdx >= LETTERS.length) this.emit('atlanta')
       } else { this.peaches += 5; this.stats.peaches = Math.floor(this.peaches) }
+    } else if (k.kind === 'badge') {
+      const i = this.badgeIdx; this.stats.badges++; this.score += 200 * this.scoreMul
+      this.badgeIdx = (i + 1) % BADGES.length
+      this.emit('badge', i, BADGES[i])
+      if (this.badgeIdx === 0) { this.stats.sets++; this.badgeBoost = BADGE_BOOST; this.emit('badgeSet') }
     } else if (k.kind === 'crate') {
       this.stats.crates++
       const rw = rollCrate(this.crateRng, this.perk.crateNoPeaches)

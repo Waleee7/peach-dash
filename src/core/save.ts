@@ -2,21 +2,21 @@ import { hashStr, mulberry32 } from './rng'
 import { POWER_KINDS, MAX_UPGRADE, type PowerKind } from './powers'
 import { freshLetters, freshLogin, freshMissions, newMissionSet, BOARD_SIZE, type BoardEntry, type LetterState, type LoginState, type MissionState } from './progress'
 
-export interface Settings { sfx: boolean; music: boolean; haptics: boolean; reduced: boolean; quality: 'high' | 'low' }
+export interface Settings { sfx: boolean; music: boolean; haptics: boolean; reduced: boolean; quality: 'high' | 'low'; tilt: boolean }
 export interface Save {
   v: 1; peaches: number; best: number; bestDist: number; runs: number
   owned: string[]; selected: string; settings: Settings
   daily: { date: string; progress: number; claimed: boolean }
   upgrades: Record<PowerKind, number>
-  missions: MissionState; letters: LetterState; login: LoginState; board: BoardEntry[]
+  missions: MissionState; letters: LetterState; login: LoginState; board: BoardEntry[]; badgeSets: number
 }
 export const SAVE_KEY = 'peachdash.v1'
 export const defaultSave = (): Save => ({
   v: 1, peaches: 300, best: 0, bestDist: 0, runs: 0, owned: ['juno'], selected: 'juno',
-  settings: { sfx: true, music: true, haptics: true, reduced: false, quality: 'high' },
+  settings: { sfx: true, music: true, haptics: true, reduced: false, quality: 'high', tilt: false },
   daily: { date: '', progress: 0, claimed: false },
   upgrades: { wing: 0, tea: 0, cobbler: 0, kicks: 0, glide: 0, board: 0 },
-  missions: freshMissions(), letters: freshLetters(), login: freshLogin(), board: [],
+  missions: freshMissions(), letters: freshLetters(), login: freshLogin(), board: [], badgeSets: 0,
 })
 type Store = Pick<Storage, 'getItem' | 'setItem'>
 export function loadSave(st: Store): Save {
@@ -30,7 +30,7 @@ export function loadSave(st: Store): Save {
     if (!owned.includes('juno')) owned.push('juno')
     const num = (x: unknown, f: number) => (typeof x === 'number' && isFinite(x) && x >= 0 ? x : f)
     return {
-      v: 1, peaches: num(j.peaches, d.peaches), best: num(j.best, 0), bestDist: num(j.bestDist, 0), runs: num(j.runs, 0),
+      v: 1, peaches: num(j.peaches, d.peaches), best: num(j.best, 0), bestDist: num(j.bestDist, 0), runs: num(j.runs, 0), badgeSets: Math.floor(num(j.badgeSets, 0)),
       owned, selected: owned.includes(j.selected) ? j.selected : 'juno',
       settings: { ...d.settings, ...(typeof j.settings === 'object' && j.settings ? j.settings : {}) },
       daily: { ...d.daily, ...(typeof j.daily === 'object' && j.daily ? j.daily : {}) },

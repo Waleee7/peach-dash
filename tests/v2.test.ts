@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { Sim, laneX, STUMBLE_WINDOW, TRAIN_H, RAMP_LEN, CHASE_START, GLIDE_ALT, type Obstacle, type ObsKind, OBS_DEF } from '../src/core/sim'
+import { Sim, laneX, STUMBLE_WINDOW, TRAIN_H, RAMP_LEN, CHASE_START, GLIDE_ALT, BADGES, BADGE_BOOST, BADGE_MUL, type Obstacle, type ObsKind, OBS_DEF } from '../src/core/sim'
+import { botAct } from '../src/core/bot'
+import { freshTilt, tiltAngle, tiltStep, TILT_ON, TILT_OFF } from '../src/core/tilt'
 import { BASE_PERK, CHARACTERS } from '../src/core/characters'
 import { POWERS, POWER_KINDS, buyUpgrade, upgradeCost, upgradeMul, powerDuration, rollCrate, MAX_UPGRADE } from '../src/core/powers'
 import { newMissionSet, applyMissions, freshMissions, levelMul, commitLetters, lettersFor, freshLetters, loginStatus, claimLogin, yesterday, addToBoard, removeFromBoard, type BoardEntry } from '../src/core/progress'
-import { defaultSave, loadSave, writeSave } from '../src/core/save'
+import { defaultSave, loadSave, writeSave, SAVE_KEY } from '../src/core/save'
 import { mulberry32 } from '../src/core/rng'
 
 const sim = (perk = BASE_PERK, opts = {}) => { const s = new Sim(7, perk, opts); s.track.obstacles = []; s.track.pickups = []; s.spawner.cursor = 1e9; return s }
@@ -199,5 +201,57 @@ describe('local leaderboard', () => {
     st.setItem('peachdash.v1', JSON.stringify({ v: 1, board: [{ score: 'x' }, null, { score: 5 }], upgrades: { wing: 99 }, missions: { items: [1] }, login: 4 }))
     const g = loadSave(st); expect(g.board.length).toBe(1); expect(g.upgrades.wing).toBe(5); expect(g.missions.items.length).toBe(3)
     void laneX
+  })
+})
+
+describe('badge set + x5 boost', () => {
+  const badgeAt = (s: Sim, ahead: number) => s.track.pickups.push({ id: uid++, kind: 'badge', lane: 1, d: s.dist + ahead, y: 1.3, taken: false, pull: 0 })
+  it('badges are collected in order and the fifth starts the boost, which then runs out', () => {
+    const s = sim(), seen: string[] = []; s.onEvent = e => { if (e.t === 'badge') seen.push(e.k!); else if (e.t === 'badgeSet' || e.t === 'badgeEnd') seen.push(e.t) }
+    for (let i = 0; i < BADGES.length; i++) { badgeAt(s, 3); run(s, 0.4) }
+    expect(seen).toEqual([...BADGES, 'badgeSet'])
+    expect(s.stats.badges).toBe(5); expect(s.stats.sets).toBe(1); expect(s.badgeIdx).toBe(0); expect(s.badgeBoost).toBeGreaterThan(BADGE_BOOST - 1)
+    run(s, BADGE_BOOST); expect(s.badgeBoost).toBe(0); expect(seen.at(-1)).toBe('badgeEnd')
+  })
+  it('the boost multiplies score by exactly five while it lasts', () => {
+    const s = sim(), base = s.scoreMul; s.badgeBoost = 2
+    expect(s.scoreMul).toBe(base * BADGE_MUL); run(s, 2.1); expect(s.scoreMul).toBe(base)
+  })
+  it('a full course always offers badges, spaced out', () => {
+    const s = new Sim(5); s.spawner.fill(s.track, 2500)
+    const ds = s.track.pickups.filter(k => k.kind === 'badge').map(k => k.d).sort((a, b) => a - b)
+    expect(ds.length).toBeGreaterThanOrEqual(5)
+    for (let i = 1; i < ds.length; i++) expect(ds[i] - ds[i - 1]).toBeGreaterThan(200)
+  })
+  it('save keeps lifetime sets and defaults older saves safely', () => {
+    const st = mem(), d = defaultSave(); d.badgeSets = 3; d.settings.tilt = true; writeSave(st, d)
+    const back = loadSave(st); expect(back.badgeSets).toBe(3); expect(back.settings.tilt).toBe(true)
+    const old = mem(); const legacy = JSON.parse(JSON.stringify(defaultSave())); delete legacy.badgeSets; delete legacy.settings.tilt; old.setItem(SAVE_KEY, JSON.stringify(legacy))
+    const up = loadSave(old); expect(up.badgeSets).toBe(0); expect(up.settings.tilt).toBe(false)
+  })
+})
+
+describe('MARTA-style bus obstacle', () => {
+  it('spawns on real courses, blocks its lane like a truck, and is dodged by the autopilot', () => {
+    const c = new Sim(9); c.spawner.fill(c.track, 3000); expect(c.track.obstacles.some(o => o.kind === 'bus')).toBe(true)
+    const hit = sim(); put(hit, 'bus', 1, 8); run(hit, 1.5); expect(hit.state).toBe('dead')
+    const miss = sim(); put(miss, 'bus', 0, 8); run(miss, 1.5); expect(miss.state).toBe('run')
+    for (const seed of [4, 8, 15]) { const s = new Sim(seed); for (let i = 0; i < 60 * 200 && s.dist < 3500 && s.state === 'run'; i++) { botAct(s); s.step(1 / 60) } expect(s.state, `seed ${seed} at ${Math.floor(s.dist)}`).toBe('run') }
+  })
+})
+
+describe('tilt steering', () => {
+  it('first reading sets neutral, a lean fires once, and it must recentre before firing again', () => {
+    const t = freshTilt()
+    expect(tiltStep(t, 5)).toBe(0)                       // neutral = 5 degrees
+    expect(tiltStep(t, 5 + TILT_ON - 1)).toBe(0)
+    expect(tiltStep(t, 5 + TILT_ON + 1)).toBe(1)
+    expect(tiltStep(t, 5 + TILT_ON + 8)).toBe(0)         // still leaning: no repeat
+    expect(tiltStep(t, 5 + TILT_OFF - 1)).toBe(0)        // back near centre re-arms
+    expect(tiltStep(t, 5 - TILT_ON - 1)).toBe(-1)
+  })
+  it('reads the correct axis for each screen rotation', () => {
+    expect(tiltAngle(10, 40, 0)).toBe(10); expect(tiltAngle(10, 40, 90)).toBe(40)
+    expect(tiltAngle(10, 40, 270)).toBe(-40); expect(tiltAngle(10, 40, -90)).toBe(-40); expect(tiltAngle(10, 40, 180)).toBe(-10)
   })
 })

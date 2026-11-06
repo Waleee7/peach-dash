@@ -3,7 +3,8 @@ import '@fontsource/bungee'
 import '@fontsource/jetbrains-mono/500.css'
 import '@fontsource/jetbrains-mono/700.css'
 import * as THREE from 'three'
-import { Sim, laneX, LANE_W, LETTERS, STUMBLE_WINDOW, type SimEvent } from './core/sim'
+import { Sim, laneX, LANE_W, LETTERS, STUMBLE_WINDOW, BADGES, BADGE_NAMES, BADGE_BOOST, type SimEvent } from './core/sim'
+import { freshTilt, tiltAngle, tiltStep } from './core/tilt'
 import { botAct } from './core/bot'
 import { CHARACTERS, charById } from './core/characters'
 import { loadSave, writeSave, applyRun, dailyMission, defaultSave, type Save } from './core/save'
@@ -34,6 +35,7 @@ class Game {
   idx = 0; committed: RunStats = {}; lastDistrict = -1; botT = 0
   geese!: GooseFlock; pfx!: PlayerFx; gooseFade = { v: 0 }; runEntry: BoardEntry | null = null; honkT = 3
   today = dateKey()
+  tilt = freshTilt(); setsDone = 0
   private flash = $('flash'); private callEl = $('h-callout'); private distEl = $('h-district')
   private cache = new Map<string, string>()
 
@@ -49,6 +51,7 @@ class Game {
   }
   async init() {
     try { await Promise.race([document.fonts.load('40px Bungee'), new Promise(r => setTimeout(r, 1200))]) } catch { /* ignore */ }
+    this.atm.backdrop.loadWallpaper(this.save.settings.quality === 'low', import.meta.env.BASE_URL)
     this.world = new World(this.scene, this.save.settings.quality === 'low')
     this.ent = new Entities(this.scene)
     this.fx = new Particles(this.scene); this.lines = new SpeedLines(this.scene)
@@ -102,6 +105,7 @@ class Game {
     this.sim = this.makeSim(false); if (at) this.sim.teleport(at); this.attract = false
     this.sim.onEvent = e => this.onEvent(e)
     this.world.reset(); this.world.warm(this.sim.dist, this.clock); this.ent.reset(); this.fx.clear(); this.lastDistrict = -1
+    this.tilt = freshTilt(); this.setsDone = 0
     this.committed = {}; this.runEntry = null; this.gooseFade.v = 0; this.honkT = 3
     this.showRunner(ch.id); this.dying = 0; this.hitStop = 0; this.shake = 0
     this.mode = 'play'; this.show('hud'); this.sound.unlock(); this.sound.startMusic()
@@ -179,6 +183,17 @@ class Game {
         this.burst(p.x, p.y + 1, -0.3, 50, cols[k], { speed: 8, up: 4, size: 0.2, life: 0.9, grav: 8 }); break
       }
       case 'powerEnd': this.snd('end'); this.buzz('end'); break
+      case 'badge': {
+        const n = e.k as (typeof BADGES)[number]
+        this.snd('letter'); this.buzz('badge'); this.addShake(0.25); this.doFlash('#ffd166', 0.3); this.fovKick = 6
+        this.callout(`<img class="cimg" src="${import.meta.env.BASE_URL}art/badge-${n}.webp" alt="">${BADGE_NAMES[n]}`, `BADGE ${(e.v ?? 0) + 1}/${BADGES.length}`)
+        this.burst(p.x, p.y + 1.2, -0.3, 26, [0xffd166, 0xfff1d6, 0xff5ec4, 0x27e6ff], { speed: 7, up: 3, size: 0.18, life: 0.7, grav: 6 }); break
+      }
+      case 'badgeSet':
+        this.snd('atlanta'); this.buzz('badgeSet'); this.addShake(0.7); this.doFlash('#ffd166', 0.65); this.fovKick = 14; this.lines.amount = 1.4
+        this.callout('X5 BOOST!', 'BADGE SET COMPLETE')
+        this.burst(p.x, p.y + 1.5, -0.3, 90, [0xffc83d, 0xff5ec4, 0xfff1d6, 0x27e6ff, 0x9a5cff], { speed: 11, up: 5, size: 0.26, life: 1.2, grav: 8 }); break
+      case 'badgeEnd': this.snd('end'); this.buzz('end'); break
       case 'crate':
         this.snd('crate'); this.buzz('crate'); this.addShake(0.4); this.doFlash('#ffd166', 0.45)
         this.callout('PEACH CRATE', e.k === 'peaches' ? `+${e.v} PEACHES` : 'MYSTERY POWER-UP')
@@ -193,7 +208,7 @@ class Game {
         this.burst(p.x, p.y + 1.5, -0.3, 90, [0xffc83d, 0xff8f6b, 0xfff1d6, 0x2ec4b6, 0xff5e5b], { speed: 11, up: 5, size: 0.26, life: 1.2, grav: 8 }); break
       case 'stumble':
         this.snd('stumble'); this.buzz('stumble'); this.addShake(0.8); this.hitStop = 0.06; this.doFlash('#ff8a5a', 0.4); this.sq = -0.5
-        this.callout('STUMBLE!', 'ONE MORE CLIP AND YOU CRASH'); this.burst(p.x, 0.3, 0, 18, [0xfff1d6, 0xe8c9a0, 0xff8a5a], { speed: 5, up: 2, size: 0.22, life: 0.5, grav: 8 }); break
+        this.callout('STUMBLED!', 'ONE MORE CRASH AND IT IS OVER'); this.burst(p.x, 0.3, 0, 18, [0xfff1d6, 0xe8c9a0, 0xff8a5a], { speed: 5, up: 2, size: 0.22, life: 0.5, grav: 8 }); break
       case 'smash':
         this.snd('smash'); this.buzz('smash'); this.addShake(0.45); this.fovKick = 10
         this.burst(laneX(e.lane ?? 1), 1, -0.6, 28, [0xffd23d, 0xff9a2a, 0xfff1d6, 0x6a5a80], { speed: 9, up: 4, size: 0.28, life: 0.8, grav: 12 }); break
@@ -232,6 +247,7 @@ class Game {
     const letterReward = commitLetters(this.save.letters, this.today, this.sim.letterIdx)
     this.save.peaches += letterReward
     if ((this.committed.dist ?? 0) > 0) this.save.runs = runsBefore
+    this.save.badgeSets += this.sim.stats.sets - this.setsDone; this.setsDone = this.sim.stats.sets
     this.committed = cur; this.persist()
     return { reward, isBest: Math.floor(this.sim.score) > prevBest, missions: m, letterReward }
   }
@@ -251,6 +267,7 @@ class Game {
     for (const d of r.missions.done) ex.push(`MISSION DONE: ${d.text}`)
     if (r.missions.levelUp) ex.push(`<b>LEVEL ${this.save.missions.level}!</b> SCORE x${levelMul(this.save.missions.level).toFixed(1)} &middot; +${r.missions.reward} peaches`)
     ex.push(r.letterReward ? `<b>ATLANTA COMPLETE</b> +${r.letterReward} peaches` : L.claimed ? 'ATLANTA HUNT DONE TODAY' : `ATLANTA HUNT: ${LETTERS.slice(0, L.idx)}${'_'.repeat(LETTERS.length - L.idx)}`)
+    if (s.stats.badges) ex.push(`BADGES ${s.stats.badges} &middot; SETS ${s.stats.sets} &middot; ALL TIME <b>${this.save.badgeSets}</b>`)
     $('o-extra').innerHTML = ex.map(x => `<div>${x}</div>`).join('')
     const b = $<HTMLButtonElement>('o-second'), cost = this.reviveCost()
     b.hidden = s.reviveUsed; b.disabled = this.save.peaches < cost
@@ -299,6 +316,7 @@ class Game {
   }
   buildSettings() {
     const rows: [keyof Save['settings'], string][] = [['sfx', 'SOUND FX'], ['music', 'MUSIC'], ['haptics', 'HAPTICS'], ['reduced', 'REDUCED MOTION'], ['quality', 'QUALITY']]
+    if ('DeviceOrientationEvent' in window && matchMedia('(pointer: coarse)').matches) rows.splice(3, 0, ['tilt', 'TILT STEER'])
     const s = this.save.settings
     $('s-list').innerHTML = rows.map(([k, l]) => {
       const on = k === 'quality' ? s.quality === 'high' : !!s[k]
@@ -342,7 +360,7 @@ class Game {
         const r = claimLogin(this.save.login, this.today); this.save.peaches += r; this.persist(); this.sound.sfx('level'); Haptics.play('level'); this.doFlash('#ffd166', 0.5)
         this.burst(0, 1.2, 0, 60, [0xffd166, 0xff8f6b, 0xfff1d6, 0x2ec4b6], { speed: 8, up: 4, size: 0.22, life: 1, grav: 6 }); this.go('title', true); break
       }
-      case 'play': this.wipe(() => this.startRun()); break
+      case 'play': if (this.save.settings.tilt) this.askTilt(); this.wipe(() => this.startRun()); break
       case 'again': if (this.mode === 'over') this.wipe(() => this.startRun()); break
       case 'runners': this.go('runners'); break
       case 'settings': this.go('settings'); break
@@ -367,10 +385,18 @@ class Game {
       if (!t) return
       if (t.dataset.act) return this.act(t.dataset.act)
       const k = t.dataset.set as keyof Save['settings'], s = this.save.settings as unknown as Record<string, unknown>
+      if (k === 'tilt' && !s.tilt && this.askTilt(on => { s.tilt = on; this.persist(); this.buildSettings() })) return
       s[k] = k === 'quality' ? (s.quality === 'high' ? 'low' : 'high') : !s[k]
       this.persist(); this.applySettings(); this.buildSettings(); this.sound.unlock(); this.sound.sfx('ui'); Haptics.play('ui')
     })
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.pause() })
+  }
+  /** iOS only hands out motion data after a permission prompt, which must come from a tap. Returns true if that prompt is pending. */
+  askTilt(done?: (on: boolean) => void) {
+    const req = (window.DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission
+    if (!req) return false
+    req.call(window.DeviceOrientationEvent).then(r => done?.(r === 'granted'), () => done?.(false))
+    return true
   }
   bindInput() {
     const act = (d: 'l' | 'r' | 'u' | 'd') => {
@@ -402,6 +428,11 @@ class Game {
       if (Math.abs(dx) > Math.abs(dy)) act(dx < 0 ? 'l' : 'r'); else act(dy < 0 ? 'u' : 'd')
       sx = e.clientX; sy = e.clientY
     })
+    addEventListener('deviceorientation', e => {
+      if (!this.save.settings.tilt || this.mode !== 'play' || this.sim.state !== 'run' || e.gamma == null || e.beta == null) return
+      const d = tiltStep(this.tilt, tiltAngle(e.gamma, e.beta, screen.orientation?.angle ?? 0))
+      if (d) act(d < 0 ? 'l' : 'r')
+    })
     addEventListener('pointerup', () => { on = false }); addEventListener('pointercancel', () => { on = false })
   }
 
@@ -411,6 +442,14 @@ class Game {
     const s = this.sim
     this.setText('h-score', Math.floor(s.score).toLocaleString()); this.setText('h-dist', String(Math.floor(s.dist)))
     this.setText('h-peaches', String(Math.floor(s.peaches)))
+    const bk = `${s.badgeIdx}:${s.stats.sets}`
+    if (this.cache.get('badges') !== bk) {
+      this.cache.set('badges', bk)
+      $('h-badges').innerHTML = BADGES.map((n, i) => `<img src="${import.meta.env.BASE_URL}art/badge-${n}.webp" alt="${BADGE_NAMES[n]}" class="${i < s.badgeIdx ? 'f' : ''}${i === s.badgeIdx - 1 ? ' pop' : ''}">`).join('')
+    }
+    const bo = $('h-boost'), boosting = s.badgeBoost > 0 && s.state === 'run'
+    bo.classList.toggle('on', boosting); $('hud').classList.toggle('boosting', boosting)
+    if (boosting) (bo.querySelector('i') as HTMLElement).style.transform = `scaleX(${Math.max(0, s.badgeBoost / BADGE_BOOST)})`
     const cb = $('h-combo'), showC = s.combo >= 3
     cb.classList.toggle('on', showC)
     if (showC) {
@@ -474,10 +513,11 @@ class Game {
     this.pfx.update(s, this.clock, this.mode === 'play' && ts > 0, reduced)
     this.geese.update(this.mode === 'play' && s.chase.on && s.state === 'run', s.chase.gap, p.x, this.clock, this.gooseFade)
     if (this.mode === 'play' && s.chase.on && s.state === 'run' && ts > 0 && (this.honkT -= real) <= 0) { this.honkT = 1.4 + Math.random() * 1.6; this.sound.sfx('honk'); Haptics.play('honk') }
+    if (running && ts > 0 && s.onTrain && !reduced && Math.random() < 0.6) this.fx.emit({ x: p.x + (Math.random() - 0.5) * 0.5, y: p.y + 0.05, z: 0.3, n: 2, colors: [0xffd166, 0xff9a2a, 0xfff1d6], speed: 3, up: 2.4, size: 0.1, life: 0.35, grav: 12, vz: 5 })
     if (running && ts > 0 && !p.air && Math.random() < 0.35) this.fx.emit({ x: p.x + (Math.random() - 0.5) * 0.4, y: 0.08, z: 0.2, n: 1, colors: [0xfff1d6, 0xe8c9a0], speed: 1, up: 0.8, size: 0.14, life: 0.4, grav: 2, vz: 2 })
     // world
     this.world.portrait = this.portrait; this.geese.pf = this.portrait
-    this.atm.update(s.dist, this.clock, this.camera.position, this.world.winMats)
+    this.atm.update(s.dist, this.clock, this.camera.position, this.world.winMats, dt)
     bendU.uCurve.value = Math.sin(s.dist / 520) * 0.00035 * (reduced ? 0.4 : 1)
     this.world.update(s.dist, this.clock)
     this.ent.update(s, this.clock)

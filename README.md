@@ -9,12 +9,14 @@ A 3D endless runner through Atlanta that runs in the browser, with no install an
 ```bash
 npm install
 npm run dev     # the Network URL also works on your phone
-npm test        # 40 tests
+npm test        # 47 tests
 ```
 
 ## How to play
 
-Swipe, or use the arrow keys: left and right change lanes, up jumps, down slides. Outrun the geese, collect peaches, and spend them on runners and longer power-ups.
+Swipe, or use the arrow keys: left and right change lanes, up jumps, down slides. On a phone you can also turn on **Tilt Steer** in Settings. Outrun the geese, collect peaches, and spend them on runners and longer power-ups.
+
+**Badge sets:** five badges appear in order during a run: ATL Plate, The Perimeter, Red Hawk, Fire Star and Junkyard Dog. Collect all five for 12 seconds of x5 score.
 
 | Power-up | What it does |
 |---|---|
@@ -34,18 +36,21 @@ Also in the game: six runners with their own perks, trains you can run on, three
 
 - **The game logic has no renderer.** `src/core` is plain TypeScript with no three.js import, so lanes, collision, spawning, scoring, missions and saves all run under `node`. The renderer in `src/game` only draws what the simulation decides.
 - **The spawner is tested by playing it.** An autopilot has to survive 6,000 m across several seeds, which catches impossible obstacle patterns that unit tests would miss.
-- **Everything is generated at runtime.** Characters, landmarks, the skyline, sound effects and the beat are all built in code, so the production build is about 1 MB with no art or audio files to download.
+- **Mostly generated at runtime.** Characters, landmarks, sound effects and the beat are built in code. The only image files are the neon wallpapers and badge sprites in `public/art`, so the production build is about 2 MB with no audio to download.
+- **The wallpaper can't show a seam.** It sits on a full ring around the camera, and the texture mirrors at its edges, so the join stays continuous on any screen shape. Its foot fades into the road fog and its top into the sky. If the images fail to load, the game paints its own skyline in code.
+- **Tested in a real browser too.** `scripts/e2e.mjs` runs the production build through tilt steering, vibration calls, a full badge set and blocked wallpaper files.
 - **Built for phones.** Instanced scenery, pooled obstacles and a capped pixel ratio keep draw calls low (about 80 in the v1 profile, not re-measured since the v2 additions).
 - **No ground pop-in.** The world-bend shader used to sink the road below a flat floor, so the road rose into view like a hill. The floor now sits far below the bent road in the exact fog color, and chunks are built past the fog line and prewarmed before the first frame.
 
 ## Limits
 
-- **The skyline is painted in code from landmark descriptions**, not from photos or generated images, so it's a stylized Atlanta. On desktop the street buildings hide much of it.
+- **The wallpapers and badges are AI-generated illustrations**, so it's a stylized Atlanta, not an exact one.
 - **Saves stay in `localStorage`**, so there are no accounts, cloud saves or global leaderboard.
-- **Vibration needs the Vibration API.** iOS Safari ignores it.
+- **Haptics depend on the phone.** Android uses the Vibration API. iOS Safari has none, so the game plays the system tick from a hidden switch control, which has not been confirmed on a real iPhone.
+- **Tilt Steer is off by default.** It has been tested with simulated motion events, not on a real phone. iOS asks for motion permission when you turn it on.
 - **Sound and haptics have only been exercised by code paths** in automated runs. Performance numbers come from a headless run on an Apple M3, not from a range of phones.
 
-All runners and landmarks are original low-poly models. There are no real people, logos or brand names.
+All runners and 3D landmarks are original low-poly models, and the game uses no team logos. The train and bus borrow the silver-and-stripe look of Atlanta transit without its name or logo. This is a fan project, not affiliated with MARTA or any team.
 
 ## Stack
 

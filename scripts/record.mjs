@@ -5,7 +5,7 @@ import { mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 const base = process.argv[2] || 'http://localhost:4173/'
 mkdirSync('docs', { recursive: true }); rmSync('/tmp/claude-501/vid', { recursive: true, force: true })
 const browser = await chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] })
-// hero video: downtown golden hour into beltline dusk
+// hero video: downtown at neon dusk
 const vctx = await browser.newContext({ viewport: { width: 800, height: 500 }, recordVideo: { dir: '/tmp/claude-501/vid', size: { width: 800, height: 500 } } })
 const vp = await vctx.newPage()
 await vp.goto(base + '?fresh=1&login=0&screen=play&bot=1&at=300'); await vp.waitForTimeout(9000)

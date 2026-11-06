@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { mulberry32 } from '../core/rng'
 
 /**
- * Procedurally painted Atlanta skyline backdrop (the Gemini image route was 429 / quota 0, see README).
+ * Backdrop: the painted neon wallpapers in public/art, with a code-painted Atlanta skyline as the fallback if they fail to load.
  * Landmark silhouettes follow the references: Bank of America Plaza's gold pyramid spire, Westin Peachtree
  * cylinder, Truist Plaza's stepped crown + mast, One Atlantic Center's steep hipped roof, 191 Peachtree's twin
  * crowns, Georgia-Pacific's stair-step, the petal-roofed stadium and the SkyView wheel.
@@ -274,48 +274,89 @@ const tex = (c: HTMLCanvasElement) => {
   t.wrapS = THREE.ClampToEdgeWrapping; t.anisotropy = 8; return t
 }
 
+/* ---------------- painted wallpaper: a full ring, so no edge can ever come into view ---------------- */
+const WALL_FS = `varying vec2 vUv; uniform sampler2D tA, tB; uniform float uMix, uReady, uRepeat, uBottom, uTall; uniform vec2 uV0; uniform vec3 uHaze, uTop;
+void main(){
+  // mirrored wrap: the painting reflects at its sides, which keeps the join continuous all the way around
+  float u = 0.5 + (vUv.x - 0.5) * uRepeat, y = uBottom + vUv.y * uTall;   // y: image-heights above the street horizon
+  vec3 col = mix(texture2D(tA, vec2(u, y + uV0.x)).rgb, texture2D(tB, vec2(u, y + uV0.y)).rgb, uMix);
+  col = mix(col, uHaze, 1.0 - smoothstep(-0.05, 0.012, y));               // the foot of the painting melts into the road fog
+  col = mix(col, uTop, smoothstep(0.6, 0.72, y));                         // and its top into the sky dome
+  gl_FragColor = vec4(col * uReady, uReady);
+  #include <colorspace_fragment>
+}`
+const WALL_DEG = 118, WALL_R = 470, WALL_ASPECT = 2752 / 1536
+/** Where each painting's skyline meets the street, measured up from the bottom of the image. */
+const WALL_V0 = { dusk: 0.29, night: 0.2 }
+
 export class SkylineBackdrop {
   group = new THREE.Group()
   private layers: { mesh: THREE.Mesh; sway: number; drift: number; follow: number }[] = []
-  private mid: THREE.ShaderMaterial; private far: THREE.ShaderMaterial; private near: THREE.ShaderMaterial; private clouds: THREE.ShaderMaterial
+  private mid?: THREE.ShaderMaterial; private far?: THREE.ShaderMaterial; private clouds?: THREE.ShaderMaterial
+  private near: THREE.ShaderMaterial; private wall: THREE.ShaderMaterial
   private c = new THREE.Color(); private c2 = new THREE.Color()
+  private loaded = false
 
   constructor(scene: THREE.Scene) {
-    /** Arc of a cylinder centred on -Z (the run direction); `groundV` is where the painted ground line sits in the texture. */
-    const arc = (R: number, deg: number, aspect: number, eyeY: number, groundV: number, mat: THREE.ShaderMaterial, order: number, sway: number, drift: number) => {
-      const th = (deg * Math.PI) / 180, hh = (R * th) / aspect
-      const g = new THREE.CylinderGeometry(R, R, hh, 72, 1, true, Math.PI - th / 2, th)
-      const m = new THREE.Mesh(g, mat); m.scale.x = -1                // mirror so the painting reads left-to-right from inside
-      m.position.y = eyeY - groundV * hh + hh / 2; m.renderOrder = order; m.frustumCulled = false
-      this.group.add(m); this.layers.push({ mesh: m, sway, drift, follow: 1 })
-    }
-    const base = { vertexShader: VS, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false, premultipliedAlpha: true } as const
-    const dayT = tex(paintMid('day')), goldT = tex(paintMid('gold')), nightT = tex(paintMid('night'))
-    this.mid = new THREE.ShaderMaterial({ ...base, fragmentShader: MID_FS, uniforms: { tA: { value: dayT }, tB: { value: goldT }, tC: { value: nightT }, uW: { value: new THREE.Vector3(1, 0, 0) }, uHaze: { value: new THREE.Color() }, uHazeK: { value: 0.7 } } })
-    this.far = new THREE.ShaderMaterial({ ...base, fragmentShader: STRIP_FS, uniforms: { tM: { value: tex(paintStrip('far')) }, uTint: { value: new THREE.Color() }, uHaze: { value: new THREE.Color() }, uHazeK: { value: 0.75 }, uOpacity: { value: 0.8 } } })
+    const base = this.base
     this.near = new THREE.ShaderMaterial({ ...base, fragmentShader: STRIP_FS, uniforms: { tM: { value: tex(paintStrip('near')) }, uTint: { value: new THREE.Color() }, uHaze: { value: new THREE.Color() }, uHazeK: { value: 0.35 }, uOpacity: { value: 1 } } })
-    this.clouds = new THREE.ShaderMaterial({ ...base, fragmentShader: CLOUD_FS, uniforms: { tM: { value: tex(paintClouds()) }, uTint: { value: new THREE.Color() }, uOpacity: { value: 0.9 } } })
-    arc(560, 330, 15, 120, 0.5, this.clouds, -9.5, 0.4, 0.012)
-    arc(515, 170, 8.5, 6, 0.02, this.far, -9.4, 0.7, 0)
-    arc(470, 130, W / H, 5, (H - GL) / H, this.mid, -9.3, 1.0, 0)
-    arc(425, 150, 11.7, 2, 0.02, this.near, -9.2, 1.9, 0)
+    const imgH = (WALL_R * (WALL_DEG * Math.PI / 180)) / WALL_ASPECT, bottom = -0.2, top = 0.75, eye = 6
+    this.wall = new THREE.ShaderMaterial({ ...base, fragmentShader: WALL_FS, uniforms: {
+      tA: { value: null }, tB: { value: null }, uMix: { value: 0 }, uReady: { value: 0 }, uRepeat: { value: 360 / WALL_DEG }, uBottom: { value: bottom }, uTall: { value: top - bottom },
+      uV0: { value: new THREE.Vector2(WALL_V0.dusk, WALL_V0.night) }, uHaze: { value: new THREE.Color() }, uTop: { value: new THREE.Color() } } })
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(WALL_R, WALL_R, (top - bottom) * imgH, 96, 1, true), this.wall)
+    ring.scale.x = -1; ring.position.y = eye + ((top + bottom) / 2) * imgH; ring.renderOrder = -9.3; ring.frustumCulled = false; ring.visible = false
+    this.group.add(ring); this.layers.push({ mesh: ring, sway: 1, drift: 0, follow: 1 })
+    this.arc(425, 150, 11.7, 2, 0.02, this.near, -9.2, 1.9, 0)
     scene.add(this.group)
   }
+  private readonly base = { vertexShader: VS, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false, premultipliedAlpha: true } as const
+  /** Arc of a cylinder centred on -Z (the run direction); `groundV` is where the painted ground line sits in the texture. */
+  private arc(R: number, deg: number, aspect: number, eyeY: number, groundV: number, mat: THREE.ShaderMaterial, order: number, sway: number, drift: number) {
+    const th = (deg * Math.PI) / 180, hh = (R * th) / aspect
+    const g = new THREE.CylinderGeometry(R, R, hh, 72, 1, true, Math.PI - th / 2, th)
+    const m = new THREE.Mesh(g, mat); m.scale.x = -1                // mirror so the painting reads left-to-right from inside
+    m.position.y = eyeY - groundV * hh + hh / 2; m.renderOrder = order; m.frustumCulled = false
+    this.group.add(m); this.layers.push({ mesh: m, sway, drift, follow: 1 })
+  }
+  /** Fetch the wallpapers; if either fails the game falls back to the skyline it can paint in code. */
+  loadWallpaper(low: boolean, base: string) {
+    const L = new THREE.TextureLoader(), u = this.wall.uniforms, suffix = low ? '-lo' : ''
+    const one = (name: string, slot: 'tA' | 'tB') => new Promise<void>((ok, no) => L.load(`${base}art/sky-${name}${suffix}.webp`, t => {
+      t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.MirroredRepeatWrapping; t.anisotropy = 4; u[slot].value = t; ok()
+    }, undefined, no))
+    return Promise.all([one('dusk', 'tA'), one('night', 'tB')]).then(() => { this.loaded = true; this.layers[0].mesh.visible = true }, () => this.paintFallback())
+  }
+  private paintFallback() {
+    const base = this.base
+    const goldT = tex(paintMid('gold')), nightT = tex(paintMid('night'))
+    this.mid = new THREE.ShaderMaterial({ ...base, fragmentShader: MID_FS, uniforms: { tA: { value: goldT }, tB: { value: goldT }, tC: { value: nightT }, uW: { value: new THREE.Vector3(1, 0, 0) }, uHaze: { value: new THREE.Color() }, uHazeK: { value: 0.7 } } })
+    this.far = new THREE.ShaderMaterial({ ...base, fragmentShader: STRIP_FS, uniforms: { tM: { value: tex(paintStrip('far')) }, uTint: { value: new THREE.Color() }, uHaze: { value: new THREE.Color() }, uHazeK: { value: 0.75 }, uOpacity: { value: 0.8 } } })
+    this.clouds = new THREE.ShaderMaterial({ ...base, fragmentShader: CLOUD_FS, uniforms: { tM: { value: tex(paintClouds()) }, uTint: { value: new THREE.Color() }, uOpacity: { value: 0.9 } } })
+    this.arc(560, 330, 15, 120, 0.5, this.clouds, -9.5, 0.4, 0.012)
+    this.arc(515, 170, 8.5, 6, 0.02, this.far, -9.4, 0.7, 0)
+    this.arc(470, 130, W / H, 5, (H - GL) / H, this.mid, -9.3, 1.0, 0)
+  }
   /**
-   * w: crossfade weights [day, gold, night]; hor: sky horizon colour (haze target); camPos follows;
+   * w: crossfade weights [day, gold, night]; hor: fog colour; top: sky colour; camPos follows;
    * sway: radians the road is currently turning (parallax between layers).
    */
-  update(w: [number, number, number], hor: THREE.Color, camPos: THREE.Vector3, sway: number, time: number) {
-    const mu = this.mid.uniforms
-    ;(mu.uW.value as THREE.Vector3).set(w[0], w[1], w[2]); (mu.uHaze.value as THREE.Color).copy(hor)
-    const farCol = (u: THREE.ShaderMaterial, day: string, gold: string, night: string, k = 1) => {
+  update(w: [number, number, number], hor: THREE.Color, top: THREE.Color, camPos: THREE.Vector3, sway: number, time: number, dt: number) {
+    const farCol = (u: THREE.ShaderMaterial, day: string, gold: string, night: string) => {
       this.c.set(day).multiplyScalar(w[0]); this.c2.set(gold).multiplyScalar(w[1]); this.c.add(this.c2); this.c2.set(night).multiplyScalar(w[2]); this.c.add(this.c2)
-      ;(u.uniforms.uTint.value as THREE.Color).copy(this.c).multiplyScalar(k); if (u.uniforms.uHaze) (u.uniforms.uHaze.value as THREE.Color).copy(hor)
+      ;(u.uniforms.uTint.value as THREE.Color).copy(this.c); if (u.uniforms.uHaze) (u.uniforms.uHaze.value as THREE.Color).copy(hor)
     }
-    farCol(this.far, '#9fb6d2', '#a87290', '#2a3270')
-    farCol(this.near, '#3f5f55', '#3a2c48', '#070a1c')
-    farCol(this.clouds, '#ffffff', '#ffb59a', '#5a4a92')
-    this.clouds.uniforms.uOpacity.value = 0.95 * (w[0] * 0.55 + w[1] * 0.9 + w[2] * 0.35)
+    const wu = this.wall.uniforms
+    if (this.loaded) wu.uReady.value = Math.min(1, wu.uReady.value + dt * 1.6)
+    wu.uMix.value = w[2]; (wu.uHaze.value as THREE.Color).copy(hor); (wu.uTop.value as THREE.Color).copy(top)
+    farCol(this.near, '#3f5f55', '#1a1038', '#070a1c')
+    if (this.mid && this.far && this.clouds) {
+      const mu = this.mid.uniforms
+      ;(mu.uW.value as THREE.Vector3).set(w[0], w[1], w[2]); (mu.uHaze.value as THREE.Color).copy(hor)
+      farCol(this.far, '#9fb6d2', '#a87290', '#2a3270')
+      farCol(this.clouds, '#ffffff', '#ffb59a', '#5a4a92')
+      this.clouds.uniforms.uOpacity.value = 0.95 * (w[0] * 0.55 + w[1] * 0.9 + w[2] * 0.35)
+    }
     for (const l of this.layers) {
       l.mesh.rotation.y = sway * l.sway + time * l.drift
       l.mesh.position.x = camPos.x * l.follow; l.mesh.position.z = camPos.z
