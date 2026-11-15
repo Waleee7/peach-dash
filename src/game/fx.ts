@@ -135,6 +135,8 @@ export class Particles {
   private n = 0; cap: number
   private px: Float32Array; py: Float32Array; pz: Float32Array; vx: Float32Array; vy: Float32Array; vz: Float32Array
   private life: Float32Array; max: Float32Array; size: Float32Array; grav: Float32Array; spin: Float32Array; rot: Float32Array; fix: Uint8Array
+  /** Every per-particle column, so a swap-remove copies them without building a new list. */
+  private all: Float32Array[]
   private d = new THREE.Object3D(); private c = new THREE.Color()
   constructor(scene: THREE.Scene, cap = 520) {
     this.cap = cap
@@ -144,6 +146,7 @@ export class Particles {
     const f = () => new Float32Array(cap)
     this.px = f(); this.py = f(); this.pz = f(); this.vx = f(); this.vy = f(); this.vz = f()
     this.life = f(); this.max = f(); this.size = f(); this.grav = f(); this.spin = f(); this.rot = f(); this.fix = new Uint8Array(cap)
+    this.all = [this.px, this.py, this.pz, this.vx, this.vy, this.vz, this.life, this.max, this.size, this.grav, this.spin, this.rot]
     this.col = new Float32Array(cap * 3)
   }
   private col: Float32Array
@@ -167,7 +170,7 @@ export class Particles {
       if (this.life[i] <= 0) {            // swap-remove
         const l = --this.n
         if (i !== l) {
-          for (const a of [this.px, this.py, this.pz, this.vx, this.vy, this.vz, this.life, this.max, this.size, this.grav, this.spin, this.rot] as Float32Array[]) a[i] = a[l]
+          for (let q = 0; q < this.all.length; q++) this.all[q][i] = this.all[q][l]
           this.fix[i] = this.fix[l]; for (let q = 0; q < 3; q++) this.col[i * 3 + q] = this.col[l * 3 + q]
         }
         i--; continue

@@ -31,6 +31,9 @@ class Game {
   runners = new Map<string, Runner>(); cur!: Runner
   sim!: Sim; mode: Mode = 'title'; attract = true; botOn = false
   camPos = new THREE.Vector3(-3, 2, 6); camLook = new THREE.Vector3(0, 1.5, -6); camFov = 62
+  private tmpPos = new THREE.Vector3(); private tmpLook = new THREE.Vector3(); private tmpShake = new THREE.Vector3()
+  /** One frame callback for the whole session, so the loop doesn't allocate a new closure every frame. */
+  private tick = (t: number) => this.frame(t)
   shake = 0; hitStop = 0; sq = 0; phase = 0; clock = 0; last = performance.now(); lean = 0; dying = 0; fovKick = 0
   idx = 0; committed: RunStats = {}; lastDistrict = -1; botT = 0
   geese!: GooseFlock; pfx!: PlayerFx; gooseFade = { v: 0 }; runEntry: BoardEntry | null = null; honkT = 3
@@ -51,7 +54,8 @@ class Game {
   }
   async init() {
     try { await Promise.race([document.fonts.load('40px Bungee'), new Promise(r => setTimeout(r, 1200))]) } catch { /* ignore */ }
-    this.atm.backdrop.loadWallpaper(this.save.settings.quality === 'low', import.meta.env.BASE_URL)
+    // Phones load the 1400px skies: the 2400px pair costs about 22 MB more GPU memory.
+    this.atm.backdrop.loadWallpaper(this.save.settings.quality === 'low' || matchMedia('(pointer: coarse)').matches, import.meta.env.BASE_URL)
     this.world = new World(this.scene, this.save.settings.quality === 'low')
     this.ent = new Entities(this.scene); this.ent.prewarm()
     // upload art as soon as it arrives instead of on the frame it first comes into view
@@ -70,7 +74,7 @@ class Game {
     if (scr === 'play') { this.botOn = qs.get('bot') === '1'; this.startRun(Number(qs.get('at')) || 0) }
     else if (scr === 'title' && qs.get('login') !== '0' && loginStatus(this.save.login, this.today).pending) this.showLogin()
     this.renderer.compile(this.scene, this.camera)
-    this.last = performance.now(); requestAnimationFrame(t => this.frame(t))
+    this.last = performance.now(); requestAnimationFrame(this.tick)
     ;(window as unknown as { __peach: Game }).__peach = this
   }
 
@@ -487,7 +491,7 @@ class Game {
 
   /* ---------- frame ---------- */
   frame(now: number) {
-    requestAnimationFrame(t => this.frame(t))
+    requestAnimationFrame(this.tick)
     const real = Math.max(0, Math.min(0.05, (now - this.last) / 1000)); this.last = now; this.clock += real
     const s = this.sim, reduced = this.save.settings.reduced
     // sustained slow frames: trade a little sharpness for a steady frame rate, one step at a time
@@ -542,13 +546,14 @@ class Game {
   updateCamera(dt: number) {
     const s = this.sim, p = s.p, pf = this.portrait, wide = this.camera.aspect > 1.2
     const back = 8.2 + 3.2 * pf, h = 5.1 + 1.7 * pf
-    let pos: THREE.Vector3, look: THREE.Vector3, fov = 66 + 12 * pf
+    const pos = this.tmpPos, look = this.tmpLook
+    let fov = 66 + 12 * pf
     if (this.mode === 'title' || this.mode === 'powers' || this.mode === 'scores' || this.mode === 'login') {
-      pos = new THREE.Vector3(wide ? -3.4 : -2.4, 1.9 + pf * 0.6, 5.4 + pf * 1.5); look = new THREE.Vector3(wide ? -0.6 : 0.3, 1.8 - pf * 1.5, -5); fov = 52 + 14 * pf
+      pos.set(wide ? -3.4 : -2.4, 1.9 + pf * 0.6, 5.4 + pf * 1.5); look.set(wide ? -0.6 : 0.3, 1.8 - pf * 1.5, -5); fov = 52 + 14 * pf
     } else if (this.mode === 'runners' || this.mode === 'settings') {
-      pos = new THREE.Vector3(wide ? 3.2 : 1.1, 1.5 + pf * 0.3, 4.6 + pf * 3.6); look = new THREE.Vector3(wide ? 0.4 : 0, 1.35 - pf * 1.5, 0); fov = 46 + 12 * pf
+      pos.set(wide ? 3.2 : 1.1, 1.5 + pf * 0.3, 4.6 + pf * 3.6); look.set(wide ? 0.4 : 0, 1.35 - pf * 1.5, 0); fov = 46 + 12 * pf
     } else {
-      pos = new THREE.Vector3(p.x * 0.55, h + Math.max(0, p.y) * 0.3, back); look = new THREE.Vector3(p.x * 0.4, 3.0 + Math.max(0, p.y) * 0.25, -13)
+      pos.set(p.x * 0.55, h + Math.max(0, p.y) * 0.3, back); look.set(p.x * 0.4, 3.0 + Math.max(0, p.y) * 0.25, -13)
       if (s.state === 'dead') { pos.set(p.x * 0.5 + 1.2, h * 0.7, back * 0.72); look.set(p.x, 1, -2) }
     }
     const k = 1 - Math.exp(-dt * (this.mode === 'play' ? 12 : 4))
@@ -558,7 +563,7 @@ class Game {
     const red = this.save.settings.reduced
     this.shake *= Math.exp(-dt * 5)
     const sh = this.shake * 0.35
-    this.camera.position.copy(this.camPos).add(new THREE.Vector3((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh * 0.5))
+    this.camera.position.copy(this.camPos).add(this.tmpShake.set((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh * 0.5))
     this.camera.lookAt(this.camLook)
     if (!red) this.camera.rotateZ(-this.lean * 0.025 + (Math.random() - 0.5) * this.shake * 0.02)
     if (Math.abs(this.camera.fov - this.camFov) > 0.01) { this.camera.fov = this.camFov; this.camera.updateProjectionMatrix() }

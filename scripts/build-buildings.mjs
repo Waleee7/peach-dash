@@ -11,8 +11,9 @@ const atlas = {}
 for (const sheet of ['towers', 'midrise', 'mids2', 'mids3', 'mids4', 'lofts', 'trees']) {
   const r = await page.evaluate(async ({ u, sheet }) => {
     const i = new Image(); i.src = u; await i.decode()
-    const w = i.width, h = i.height, c = document.createElement('canvas'); c.width = w; c.height = h
-    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(i, 0, 0)
+    // Sheets wider than 1376px are drawn at 1376px wide, like the rest, to keep phone GPU memory down.
+    const s = Math.min(1, 1376 / i.width), w = Math.round(i.width * s), h = Math.round(i.height * s), c = document.createElement('canvas'); c.width = w; c.height = h
+    const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high'; x.drawImage(i, 0, 0, w, h)
     const im = x.getImageData(0, 0, w, h), d = im.data, on = new Uint8Array(w * h), rows = new Uint32Array(h)
     for (let n = 0, p = 0; n < w * h; n++, p += 4) {
       const R = d[p], G = d[p + 1], B = d[p + 2], key = G - Math.max(R, B), a = key > 90 ? 0 : key < 35 ? 255 : Math.round(255 * (90 - key) / 55)
