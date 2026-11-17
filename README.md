@@ -43,6 +43,44 @@ Also in the game: six runners with their own perks, trains you can run on, three
 - **Built for phones.** Instanced scenery, pooled obstacles and a capped pixel ratio keep draw calls low (about 80 in the v1 profile, not re-measured since the v2 additions).
 - **No ground pop-in.** The world-bend shader used to sink the road below a flat floor, so the road rose into view like a hill. The floor now sits far below the bent road in the exact fog color, and chunks are built past the fog line and prewarmed before the first frame.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  INPUT["input<br/>keys · swipes · tilt (core/tilt)"] --> MAIN[src/main.ts]
+  MAIN --> CORE
+  subgraph CORE["src/core · plain TypeScript, no three.js"]
+    SIM["sim: lanes, collision,<br/>spawning, scoring, chase"]
+    POW[powers · characters · progress]
+    SAVE["save (localStorage)"]
+    RNG[rng · bot autopilot]
+  end
+  CORE -- "state each frame" --> GAME
+  subgraph GAME["src/game · three.js renderer"]
+    WORLD["world · skyline · buildingAtlas<br/>instanced art cards, world-bend shader"]
+    ENT[entities · models · chars · powerfx · gfx]
+    FX["fx: Web Audio, haptics, particles"]
+  end
+  GAME --> SCREEN[WebGL canvas + HUD]
+```
+
+The simulation decides and the renderer only draws, which is why `npm test` can play whole runs under Node.
+
+## Tests
+
+```bash
+npm test                                    # Vitest: simulation, spawner, powers, saves
+npm run build && npx vite preview --port 4173 &
+node scripts/e2e.mjs                        # real-browser checks on the production build
+```
+
+Last run on 2026-11-16:
+
+- **51 of 51 Vitest tests passed** (2 files), including the autopilot that must survive 6,000 m across several seeds.
+- `npm run build` type-checked cleanly and produced a 3.07 MB build.
+- **25 of 25 real-browser checks passed** in `scripts/e2e.mjs` (desktop art loading, tilt steering, swipes, badge-set boost, vibration patterns, the iPhone haptics path, and the painted-skyline fallback).
+- The live site's first load transferred 2.19 MB on desktop and 1.95 MB on a phone (Playwright, Chromium).
+
 ## Limits
 
 - **All the 2D art is AI-generated**, so it's a stylized Atlanta, not an exact one.
@@ -58,4 +96,21 @@ All runners are original low-poly models, and the game uses no team logos. The t
 
 Vite, TypeScript, three.js, Web Audio, Vitest. Debug URLs such as `?screen=play&bot=1&at=900` start the autopilot 900 m in.
 
-MIT © 2026 Joshua Dare
+## Status
+
+Live at [peach-dash.vercel.app](https://peach-dash.vercel.app). Automated checks pass in Chromium; it still needs a pass on real phones for haptics, tilt and frame pacing (see Limits).
+
+## Roadmap
+
+- Measure frame pacing, haptics and Tilt Steer on real iPhone and Android devices.
+- Re-measure draw calls after the v2 scenery.
+- A global leaderboard (saves are local only today).
+
+## Credits
+
+- Made by [Akinwale Dare](https://github.com/Waleee7).
+- 2D art (buildings, trees, murals, badges) is AI-generated and keyed into atlases by `scripts/build-buildings.mjs`; characters, vehicles, sound and music are built in code.
+- [three.js](https://threejs.org) (MIT). Fonts: Bungee and JetBrains Mono through Fontsource (SIL Open Font License).
+- A fan project, not affiliated with MARTA or any team.
+
+MIT licensed, see [LICENSE](LICENSE).
